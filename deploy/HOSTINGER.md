@@ -20,6 +20,25 @@ Use `/opt/alt/php83/usr/bin/php` também nos comandos Artisan e no cron. Se esse
 
 [A Hostinger explica a diferença entre o PHP do site e o PHP do SSH/Composer](https://www.hostinger.com/support/5792082-how-to-solve-common-composer-issues-at-hostinger/).
 
+## Composer informa dezenas de incompatibilidades com PHP 8.1
+
+Todos esses erros têm a mesma causa: `composer install` está sendo executado pelo PHP 8.1 do terminal. Use explicitamente o PHP 8.3 também para o Composer:
+
+```sh
+cd /home/u382808979/domains/crm.poseitech.com.br/public_html
+/opt/alt/php83/usr/bin/php -v
+/opt/alt/php83/usr/bin/php /usr/local/bin/composer2 install --no-dev --optimize-autoloader
+/opt/alt/php83/usr/bin/php scripts/hostinger.php --install
+```
+
+Se `/usr/local/bin/composer2` não existir e você tiver enviado o arquivo `composer.phar` para a pasta do projeto, substitua somente a linha do Composer por:
+
+```sh
+/opt/alt/php83/usr/bin/php composer.phar install --no-dev --optimize-autoloader
+```
+
+Não edite o código de `composer.phar`, não execute `composer update` para contornar esse erro e não use `--ignore-platform-reqs`: o projeto e suas dependências precisam realmente executar em PHP 8.2+. A autodetecção de versão de `scripts/hostinger.php` vale para esse script; ela não muda o comando global `composer` do SSH.
+
 ## Correção da instalação atual: APP_KEY ausente
 
 O log informado mostra `MissingAppKeyException`. Envie o arquivo atualizado `scripts/hostinger.php` para a instalação e execute no terminal:
@@ -46,7 +65,7 @@ Use `poseitech/` para a aplicação privada e `public_html/` para o conteúdo de
 /opt/alt/php83/usr/bin/php artisan poseitech:admin seu@email.com
 ```
 
-O primeiro comando verifica requisitos, cria somente pastas necessárias, remove caches gerados, gera a chave apenas se estiver ausente, aplica migrations sem apagar registros, cria planos iniciais e recompila caches no servidor. Instale as dependências com `composer install --no-dev --optimize-autoloader` ou envie a pasta `vendor` completa. Não é necessário Node ou Vite.
+O primeiro comando verifica requisitos, cria somente pastas necessárias, remove caches gerados, gera a chave apenas se estiver ausente, aplica migrations sem apagar registros, cria planos iniciais e recompila caches no servidor. Antes dele, instale as dependências usando o comando com PHP 8.3 da seção Composer acima, ou envie a pasta `vendor` completa. Não é necessário Node ou Vite.
 
 4. Abra seu domínio e use **Começar agora**. Configure um cron a cada minuto com o caminho absoluto do PHP e de `poseitech/artisan schedule:run`. Configure SMTP antes de usar e-mails; `MAIL_MAILER=log` não envia mensagens reais.
 
