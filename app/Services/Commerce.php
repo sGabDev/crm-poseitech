@@ -1,0 +1,266 @@
+<?php
+
+namespace App\Services;
+
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+
+class Commerce
+{
+    public function __construct(public Tenant $t) {}
+
+    private function fail(string $message): never
+    {
+        throw ValidationException::withMessages(['operation' => $message]);
+    }
+
+    public function sell(array $d): int
+    {
+        $this->t->authorize('sales', true);
+
+        return DB::transaction(function () use ($d) {
+            $this->t->lock();
+            if ($existing = $this->t->query('sales')->where('request_key', $d['request_key'])->first()) {
+                return $existing->id;
+            }
+            $customer = ! empty($d['customer_id']) ? $this->t->find('customers', $d['customer_id']) : null;
+            if ($customer?->anonymized_at) {
+                $this->fail('Cliente anonimizado.');
+            }
+            $items = [];
+            $subtotal = 0;
+            $cost = 0;
+            foreach ($d['items'] as $line) {
+                $p = $this->t->find('products', $line['product_id']);
+                if (! $p->active) {
+                    $this->fail('Produto inativo.');
+                }
+                $qty = (int) $line['quantity'];
+                $addons = json_decode($p->addons ?? '[]', true);
+                $chosen = array_values(array_unique($line['addons'] ?? []));
+                sort($chosen);
+                $addonPrice = 0;
+                $names = [];
+                foreach ($chosen as $key) {
+                    if (! isset($addons[$key])) {
+                        $this->fail('Adicional inválido.');
+                    }$addonPrice += $addons[$key]['price'];
+                    $names[] = $addons[$key]['name'];
+                }
+                $p->price += $addonPrice;
+                $itemKey = $p->id.':'.implode(',', $chosen);
+                $items[$itemKey] = ['p' => $p, 'addons' => implode(', ', $names), 'quantity' => ($items[$itemKey]['quantity'] ?? 0) + $qty];
+            }
+            foreach ($items as $line) {
+                $subtotal += $line['p']->price * $line['quantity'];
+                $cost += $line['p']->cost * $line['quantity'];
+            }
+            $discount = Tenant::cents($d['discount'] ?? 0);
+            $extra = Tenant::cents($d['extra'] ?? 0);
+            $coupon = null;
+            if (! empty($d['coupon'])) {
+                $this->t->authorize('loyalty', true);
+                $coupon = $this->t->query('coupons')->where('code', Str::upper($d['coupon']))->first();
+                if (! $coupon || ! $coupon->active || $coupon->expires_at < now()->toDateString() || $coupon->uses >= $coupon->max_uses || $subtotal < $coupon->minimum || ($coupon->customer_id && $coupon->customer_id !== $customer?->id)) {
+                    $this->fail('Cupom inválido para esta compra.');
+                }
+                $discount += $coupon->type === 'percent' ? (int) round($subtotal * $coupon->value / 10000) : $coupon->value;
+            }
+            $fee = 0;
+            if (! empty($d['order'])) {
+                $this->t->authorize('orders', true);
+                if (! empty($d['delivery'])) {
+                    $this->t->authorize('delivery', true);
+                    $fee = Tenant::cents($d['fee'] ?? 0);
+                    if (empty($d['address'])) {
+                        $this->fail('Informe o endereço da entrega.');
+                    }
+                }
+            }
+            $extra += $fee;
+            if ($discount > $subtotal) {
+                $this->fail('O desconto não pode superar o subtotal.');
+            }
+            $total = $subtotal - $discount + $extra;
+            if ($total <= 0 || $total > 99999999999) {
+                $this->fail('Total da venda inválido.');
+            }
+            $payments = collect($d['payments'] ?? [])->filter(fn ($p) => Tenant::cents($p['amount'] ?? 0) > 0);
+            $paid = $payments->sum(fn ($p) => Tenant::cents($p['amount']));
+            if ($paid > $total) {
+                $this->fail('Os pagamentos excedem o total da venda. Informe o valor recebido sem o troco.');
+            }
+            if ($paid < $total) {
+                $this->t->authorize('credit', true);
+                if (! $customer || empty($d['due_date'])) {
+                    $this->fail('Selecione um cliente e vencimento para o saldo pendente.');
+                }
+            }
+            $saleId = $this->t->insert('sales', ['customer_id' => $customer?->id, 'user_id' => auth()->id(), 'coupon_id' => $coupon?->id,
+                'subtotal' => $subtotal, 'discount' => $discount, 'extra' => $extra, 'total' => $total, 'cost' => $cost, 'paid' => $paid,
+                'notes' => $d['notes'] ?? null, 'receipt_hash' => hash('sha256', Str::random(64)), 'request_key' => $d['request_key']]);
+            foreach ($items as $line) {
+                $p = $line['p'];
+                $qty = $line['quantity'];
+                $deduct = $this->t->company->enabled('stock') && $p->type === 'product';
+                if ($deduct) {
+                    $this->stock($p->id, -$qty, 'sale', 'Venda #'.$saleId, $saleId);
+                }
+                $this->t->insert('sale_items', ['sale_id' => $saleId, 'product_id' => $p->id, 'name' => $p->name, 'quantity' => $qty,
+                    'price' => $p->price, 'cost' => $p->cost, 'total' => $p->price * $qty, 'stock_deducted' => $deduct, 'addons' => $line['addons'] ?: null]);
+            }
+            foreach ($payments as $p) {
+                $this->payment($saleId, null, $customer?->id, Tenant::cents($p['amount']), $p['method'], 'in');
+            }
+            if ($paid < $total) {
+                $count = min((int) ($d['installments'] ?? 1), 36);
+                $remaining = $total - $paid;
+                $part = intdiv($remaining, $count);
+                if ($part < 1) {
+                    $this->fail('O valor é insuficiente para a quantidade de parcelas.');
+                }
+                for ($i = 0; $i < $count; $i++) {
+                    $this->t->insert('accounts', ['type' => 'receivable', 'description' => 'Venda #'.$saleId.' • parcela '.($i + 1).'/'.$count,
+                        'customer_id' => $customer->id, 'sale_id' => $saleId, 'amount' => $part + ($i === $count - 1 ? $remaining % $count : 0),
+                        'due_date' => Carbon::parse($d['due_date'])->addMonthsNoOverflow($i)->toDateString(), 'origin' => 'credit']);
+                }
+            }
+            if ($coupon) {
+                $this->t->query('coupons')->where('id', $coupon->id)->increment('uses');
+            }
+            if ($customer && $this->t->company->enabled('loyalty')) {
+                $settings = $this->t->company->settings ?? [];
+                if (($settings['loyalty_mode'] ?? 'points') === 'cashback') {
+                    $cashback = (int) floor($total * ($settings['loyalty_rate'] ?? 1) / 100);
+                    if ($cashback) {
+                        $this->t->insert('customer_credits', ['customer_id' => $customer->id, 'sale_id' => $saleId, 'user_id' => auth()->id(), 'amount' => $cashback, 'description' => 'Cashback venda #'.$saleId]);
+                    }
+                } else {
+                    $points = ($settings['loyalty_mode'] ?? 'points') === 'purchases' ? 1 : (int) floor($total / 100 * ($settings['loyalty_rate'] ?? 1));
+                    $this->t->insert('loyalty_transactions', ['customer_id' => $customer->id, 'sale_id' => $saleId, 'points' => $points, 'description' => 'Venda #'.$saleId]);
+                }
+            }
+            if (! empty($d['order'])) {
+                $this->t->insert('orders', ['sale_id' => $saleId, 'delivery' => ! empty($d['delivery']), 'address' => $d['address'] ?? null, 'fee' => $fee, 'region' => $d['region'] ?? null]);
+            }
+            $this->t->audit('sale.created', 'sales', $saleId, null, ['total' => $total, 'paid' => $paid]);
+
+            return $saleId;
+        }, 3);
+    }
+
+    public function payment(?int $sale, ?int $account, ?int $customer, int $amount, string $method, string $direction): int
+    {
+        if (! array_key_exists($method, config('poseitech.methods')) || $amount <= 0) {
+            $this->fail('Pagamento inválido.');
+        }
+        $register = $this->t->query('cash_registers')->whereNull('closed_at')->first();
+        if ($method === 'cash' && $this->t->company->enabled('cash') && ! $register) {
+            $this->fail('Abra o caixa antes de movimentar dinheiro.');
+        }
+        if ($direction === 'out' && $method === 'cash' && $register && $this->expected($register) < $amount) {
+            $this->fail('Saldo insuficiente no caixa.');
+        }
+        $id = $this->t->insert('payments', ['sale_id' => $sale, 'account_id' => $account, 'customer_id' => $customer, 'user_id' => auth()->id(), 'amount' => $amount, 'method' => $method, 'direction' => $direction]);
+        if ($register) {
+            $this->t->insert('cash_transactions', ['cash_register_id' => $register->id, 'payment_id' => $id, 'user_id' => auth()->id(),
+                'description' => $sale ? 'Venda #'.$sale : 'Conta #'.$account, 'method' => $method, 'amount' => $direction === 'in' ? $amount : -$amount]);
+        }
+
+        return $id;
+    }
+
+    public function settle(int $id, array $d): void
+    {
+        DB::transaction(function () use ($id, $d) {
+            $this->t->lock();
+            $a = $this->t->find('accounts', $id);
+            $this->t->authorize($a->origin === 'credit' ? 'credit' : 'finance', true);
+            if (! empty($d['request_key']) && $this->t->query('payments')->where('request_key', $d['request_key'])->exists()) {
+                return;
+            }
+            $amount = Tenant::cents($d['amount']);
+            if ($a->status !== 'pending' || $amount <= 0 || $amount > $a->amount - $a->paid) {
+                $this->fail('Valor superior ao saldo ou conta já encerrada.');
+            }
+            $paymentId = $this->payment($a->sale_id, $a->id, $a->customer_id, $amount, $d['method'], $a->type === 'receivable' ? 'in' : 'out');
+            if (! empty($d['request_key'])) {
+                $this->t->update('payments', $paymentId, ['request_key' => $d['request_key']]);
+            }
+            $paid = $a->paid + $amount;
+            $this->t->update('accounts', $id, ['paid' => $paid, 'status' => $paid === $a->amount ? 'paid' : 'pending']);
+            if ($a->sale_id) {
+                $this->t->query('sales')->where('id', $a->sale_id)->increment('paid', $amount);
+            }
+            if ($paid === $a->amount && $a->recurrence !== 'none') {
+                $due = Carbon::parse($a->due_date);
+                $due = $a->recurrence === 'weekly' ? $due->addWeek() : $due->addMonthNoOverflow();
+                $this->t->insert('accounts', ['type' => $a->type, 'description' => $a->description, 'category' => $a->category, 'supplier_id' => $a->supplier_id,
+                    'customer_id' => $a->customer_id, 'amount' => $a->amount, 'due_date' => $due->toDateString(), 'recurrence' => $a->recurrence]);
+            }
+            $this->t->audit('account.payment', 'accounts', $id, ['paid' => $a->paid], ['paid' => $paid]);
+        }, 3);
+    }
+
+    public function stock(int $id, int $delta, string $type, ?string $notes, ?int $sale = null): void
+    {
+        $p = $this->t->find('products', $id);
+        if ($p->type !== 'product' || $p->stock + $delta < 0) {
+            $this->fail('Estoque insuficiente ou item é um serviço: '.$p->name);
+        }
+        $this->t->update('products', $id, ['stock' => $p->stock + $delta]);
+        $this->t->insert('stock_movements', ['product_id' => $id, 'sale_id' => $sale, 'user_id' => auth()->id(), 'type' => $type, 'quantity' => $delta, 'balance' => $p->stock + $delta, 'notes' => $notes]);
+    }
+
+    public function expected(object $register): int
+    {
+        return $register->opening + $this->t->query('cash_transactions')->where('cash_register_id', $register->id)->where('method', 'cash')->sum('amount');
+    }
+
+    public function cancel(int $id, string $reason): void
+    {
+        $this->t->authorize('sales', true);
+        Gate::authorize('manage-company');
+        DB::transaction(function () use ($id, $reason) {
+            $this->t->lock();
+            $sale = $this->t->find('sales', $id);
+            if ($sale->status === 'cancelled') {
+                $this->fail('Venda já cancelada.');
+            }
+            foreach ($this->t->query('payments')->where('sale_id', $id)->whereNull('reversed_at')->get() as $p) {
+                $register = $this->t->query('cash_registers')->whereNull('closed_at')->first();
+                if ($p->method === 'cash' && $this->t->company->enabled('cash') && ! $register) {
+                    $this->fail('Abra o caixa para registrar a devolução.');
+                }
+                if ($p->method === 'cash' && $register && $this->expected($register) < $p->amount) {
+                    $this->fail('Saldo insuficiente para devolver o pagamento.');
+                }
+                if ($register) {
+                    $this->t->insert('cash_transactions', ['cash_register_id' => $register->id, 'payment_id' => $p->id, 'user_id' => auth()->id(), 'description' => 'Estorno venda #'.$id, 'method' => $p->method, 'amount' => -$p->amount]);
+                }
+                $this->t->update('payments', $p->id, ['reversed_at' => now()]);
+            }
+            foreach ($this->t->query('sale_items')->where('sale_id', $id)->where('stock_deducted', true)->get() as $item) {
+                $this->stock($item->product_id, $item->quantity, 'return', 'Cancelamento #'.$id, $id);
+            }
+            $this->t->query('accounts')->where('sale_id', $id)->update(['status' => 'cancelled', 'updated_at' => now()]);
+            $this->t->query('orders')->where('sale_id', $id)->update(['status' => 'cancelled', 'updated_at' => now()]);
+            $points = $this->t->query('loyalty_transactions')->where('sale_id', $id)->sum('points');
+            if ($points) {
+                $this->t->insert('loyalty_transactions', ['customer_id' => $sale->customer_id, 'sale_id' => $id, 'points' => -$points, 'description' => 'Cancelamento #'.$id]);
+            }
+            $credit = $this->t->query('customer_credits')->where('sale_id', $id)->sum('amount');
+            if ($credit) {
+                $this->t->insert('customer_credits', ['customer_id' => $sale->customer_id, 'sale_id' => $id, 'user_id' => auth()->id(), 'amount' => -$credit, 'description' => 'Estorno de cashback #'.$id]);
+            }
+            if ($sale->coupon_id) {
+                $this->t->query('coupons')->where('id', $sale->coupon_id)->where('uses', '>', 0)->decrement('uses');
+            }
+            $this->t->update('sales', $id, ['status' => 'cancelled', 'paid' => 0]);
+            $this->t->audit('sale.cancelled', 'sales', $id, $sale, ['reason' => $reason]);
+        }, 3);
+    }
+}

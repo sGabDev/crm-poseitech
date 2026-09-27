@@ -1,0 +1,8 @@
+{
+  "name": "poseitech-crm",
+  "private": true,
+  "scripts": {
+    "check": "node scripts/check.cjs",
+    "test": "node scripts/check.cjs --test"
+  }
+}
