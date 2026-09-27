@@ -33,3 +33,4 @@ Neste workspace, o servidor local usa **SQLite** em `database/database.sqlite`; 
 Na hospedagem, aponte o DocumentRoot para `public/`, use HTTPS, `APP_ENV=production`, `APP_DEBUG=false`, URL definitiva e `SESSION_SECURE_COOKIE=true`. Configure SMTP, cron e backups do banco, `storage/app` e `APP_KEY`. Não exponha `.env`, `vendor` ou o banco SQLite. Não use `migrate:fresh` em uma base com dados.
 
 A validação automatizada foi feita em SQLite; MySQL, SMTP real e revisão visual em dispositivos ainda precisam ser homologados no ambiente de implantação. Relatórios financeiros e previsões são gerenciais, sem finalidade fiscal.
+Instalação na Hostinger e correção de APP_KEY ausente: [deploy/HOSTINGER.md](deploy/HOSTINGER.md). O arquivo deploy/hostinger.env.example contém a configuração de produção sem credenciais reais.
