@@ -17,6 +17,9 @@ class SettingsController extends Controller
 
     public function index()
     {
+        if (! Gate::allows('manage-company')) {
+            return view('password-settings');
+        }
         Gate::authorize('manage-company');
 
         return view('settings', ['staff' => User::where('company_id', $this->t->id())->get(), 'smtp' => $this->t->company->smtp ?? [], 'audit' => $this->t->query('audit_logs')->orderByDesc('id')->paginate(15)]);
@@ -39,6 +42,7 @@ class SettingsController extends Controller
             }
             $company->update($d);
         } elseif ($section === 'modules') {
+            Gate::authorize('platform');
             $r->validate(['modules' => 'nullable|array', 'modules.*' => ['string', Rule::in(array_keys(config('poseitech.modules')))]]);
             $modules = array_values(array_unique($r->input('modules', [])));
             foreach (['delivery' => ['orders'], 'orders' => ['sales', 'products'], 'stock' => ['products'], 'sales' => ['products'], 'credit' => ['sales', 'customers'], 'campaigns' => ['customers'], 'portal' => ['customers'], 'loyalty' => ['customers']] as $module => $dependencies) {
@@ -82,6 +86,8 @@ class SettingsController extends Controller
         $d['permissions'] = $d['permissions'] ?? [];
         if (empty($d['password'])) {
             unset($d['password']);
+        } else {
+            $d['must_change_password'] = true;
         }
         DB::transaction(function () use ($user, $d) {
             $this->t->lock();

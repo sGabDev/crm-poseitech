@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\CompanyAccess;
+use App\Http\Middleware\RequirePasswordChange;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,6 +16,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias(['company' => CompanyAccess::class]);
         $middleware->append(SecurityHeaders::class);
+        $middleware->web(append: [RequirePasswordChange::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

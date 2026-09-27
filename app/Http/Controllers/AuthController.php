@@ -33,6 +33,9 @@ class AuthController extends Controller
         RateLimiter::clear($key);
         $r->session()->regenerate();
 
+        if ($r->user()->must_change_password) {
+            return redirect('/password/change');
+        }
         return redirect()->intended($r->user()->role === 'super' ? '/admin' : '/dashboard');
     }
 
@@ -64,6 +67,16 @@ class AuthController extends Controller
         return redirect('/login');
     }
 
+    public function changePassword(Request $r)
+    {
+        $d = $r->validate(['current_password' => ['required', 'current_password'], 'password' => ['required', 'confirmed', 'different:current_password', PasswordRule::min(10)->letters()->numbers()]]);
+        $r->user()->forceFill(['password' => $d['password'], 'must_change_password' => false, 'remember_token' => Str::random(60)])->save();
+        DB::table('sessions')->where('user_id', $r->user()->id)->where('id', '!=', $r->session()->getId())->delete();
+        $r->session()->regenerate();
+
+        return redirect($r->user()->role === 'super' ? '/admin' : '/dashboard')->with('success', 'Senha alterada.');
+    }
+
     public function forgot(Request $r)
     {
         $r->validate(['email' => 'required|email']);
@@ -76,7 +89,7 @@ class AuthController extends Controller
     {
         $r->validate(['token' => 'required', 'email' => 'required|email', 'password' => ['required', 'confirmed', PasswordRule::min(10)->letters()->numbers()]]);
         $status = Password::reset($r->only('email', 'password', 'password_confirmation', 'token'), function (User $user, string $password) {
-            $user->forceFill(['password' => Hash::make($password), 'remember_token' => Str::random(60)])->save();
+            $user->forceFill(['password' => Hash::make($password), 'must_change_password' => false, 'remember_token' => Str::random(60)])->save();
             DB::table('sessions')->where('user_id', $user->id)->delete();
             event(new PasswordReset($user));
         });

@@ -2,7 +2,7 @@
 @section('title',$credit ? 'Fiados' : 'Financeiro')
 @section('content')<div class="page-heading">
 <div>
-<h1>{{ $credit ? 'Fiados e parcelas' : 'Financeiro' }}</h1>
+<h1>{{ $credit ? 'Valores pendentes' : 'Financeiro' }}</h1>
 <p>{{ $credit ? 'Acompanhe vencimentos e registre recebimentos parciais ou totais.' : 'Contas, recebimentos e previsibilidade para o seu negócio.' }}</p>
 </div>
 <button class="secondary" data-print>Imprimir / PDF</button>

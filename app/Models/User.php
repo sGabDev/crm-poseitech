@@ -24,7 +24,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'company_id', 'role', 'permissions', 'active',
+        'company_id', 'role', 'permissions', 'active', 'must_change_password',
     ];
 
     /**
@@ -47,6 +47,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'must_change_password' => 'boolean',
             'permissions' => 'array', 'active' => 'boolean',
         ];
     }

@@ -10,6 +10,7 @@ use App\Services\Tenant;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -42,6 +43,32 @@ class CommerceTest extends TestCase
     {
         return array_replace(['request_key' => (string) Str::uuid(), 'customer_id' => $this->customer, 'items' => [['product_id' => $this->product, 'quantity' => 2]], 'discount' => '0', 'extra' => '0',
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
+    }
+
+    public function test_password_change_is_mandatory_and_validates_current_password(): void
+    {
+        $this->owner->update(['must_change_password' => true]);
+        $this->get('/dashboard')->assertRedirect('/password/change');
+        $this->post('/sales', $this->sale())->assertRedirect('/password/change');
+        $this->get('/password/change')->assertOk()->assertSee('Antes de continuar');
+        $this->post('/password/change', ['current_password' => 'wrong', 'password' => 'NovaSenha12345', 'password_confirmation' => 'NovaSenha12345'])->assertSessionHasErrors('current_password');
+        $this->assertTrue($this->owner->fresh()->must_change_password);
+        $this->post('/password/change', ['current_password' => 'password', 'password' => 'NovaSenha12345', 'password_confirmation' => 'NovaSenha12345'])->assertRedirect('/dashboard');
+        $this->assertFalse($this->owner->fresh()->must_change_password);
+        $this->assertTrue(Hash::check('NovaSenha12345', $this->owner->fresh()->password));
+        $this->get('/dashboard')->assertOk();
+    }
+
+    public function test_deleted_product_cannot_be_sold_but_old_sale_can_be_cancelled(): void
+    {
+        $this->post('/sales', $this->sale())->assertSessionHasNoErrors();
+        $sale = DB::table('sales')->value('id');
+        $this->post('/records/products/'.$this->product.'/delete')->assertSessionHasNoErrors();
+        $this->get('/records/products')->assertDontSee('Produto A');
+        $this->get('/sales/new')->assertDontSee('Produto A');
+        $this->post('/sales', $this->sale())->assertSessionHasErrors();
+        $this->post('/sales/'.$sale.'/cancel', ['reason' => 'Cliente cancelou'])->assertSessionHasNoErrors();
+        $this->assertSame(10, DB::table('products')->where('id', $this->product)->value('stock'));
     }
 
     public function test_customer_debt_accepts_partial_payment_across_sales_without_duplicates(): void
@@ -86,6 +113,9 @@ class CommerceTest extends TestCase
         $this->post('/sales', $this->sale())->assertSessionHasNoErrors();
         $this->get('/customers/'.$this->customer)->assertOk()->assertSee('Pago + Fiado')->assertDontSee('Conta do cliente / parcelas')->assertDontSee('Timeline de relacionamento')->assertDontSee('Privacidade e dados pessoais');
         $this->company->plan->update(['modules' => ['customers']]);
+        $this->post('/settings', ['section' => 'modules', 'modules' => ['delivery']])->assertForbidden();
+        $support = User::factory()->create(['role' => 'super', 'company_id' => null]);
+        $this->actingAs($support)->withSession(['support_company' => $this->company->id]);
         $this->post('/settings', ['section' => 'modules', 'modules' => ['delivery', 'credit']])->assertSessionHasNoErrors();
         $this->assertEqualsCanonicalizing(['delivery', 'credit', 'orders', 'sales', 'products', 'customers'], $this->company->fresh()->modules);
         $this->get('/orders')->assertOk();
@@ -152,7 +182,7 @@ class CommerceTest extends TestCase
         $this->actingAs($staff)->get('/records/customers')->assertOk();
         $this->post('/records/customers', ['name' => 'Proibido'])->assertForbidden();
         $this->get('/sales')->assertForbidden();
-        $this->get('/settings')->assertForbidden();
+        $this->get('/settings')->assertOk()->assertSee('Minha senha')->assertDontSee('Módulos da empresa');
         $this->get('/admin')->assertForbidden();
         $this->company->update(['modules' => config('poseitech.defaults')]);
         $this->actingAs($this->owner)->get('/orders')->assertForbidden();
@@ -265,7 +295,7 @@ class CommerceTest extends TestCase
 
     public function test_blocked_company_and_forged_settings_are_rejected(): void
     {
-        $this->post('/settings', ['section' => 'modules', 'modules' => ['unknown']])->assertSessionHasErrors();
+        $this->post('/settings', ['section' => 'modules', 'modules' => ['unknown']])->assertForbidden();
         $this->company->update(['status' => 'blocked']);
         $this->get('/dashboard')->assertForbidden();
         $this->get('/catalog/empresa-a')->assertNotFound();

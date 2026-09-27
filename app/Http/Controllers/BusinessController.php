@@ -57,7 +57,7 @@ class BusinessController extends Controller
     {
         $this->t->authorize('sales', true);
 
-        return view('sale-form', ['customers' => $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->limit(1000)->get(), 'products' => $this->t->query('products')->where('active', true)->orderBy('name')->limit(2000)->get()]);
+        return view('sale-form', ['customers' => $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->get(), 'products' => $this->t->query('products')->where('active', true)->orderBy('name')->get()]);
     }
 
     public function sell(Request $r)
@@ -375,6 +375,6 @@ class BusinessController extends Controller
             $this->t->audit('customer.credit', 'customers', $id, null, $d);
         });
 
-        return back()->with('success','Crédito atualizado.');
+        return back()->with('success', 'Crédito atualizado.');
     }
 }

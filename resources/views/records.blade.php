@@ -24,7 +24,7 @@
 <td>
 <strong>{{ $record->name ?? $record->code }}</strong>
 </td>@foreach(array_slice($spec['fields'],1,3,true) as $key=>$f)<td>@if($f[1]==='money'){{ \App\Services\Tenant::money($record->$key) }}@elseif(str_starts_with($f[1],'select:')){{ collect(explode(',',substr($f[1],7)))->mapWithKeys(fn($o)=>[explode('=',$o)[0]=>explode('=',$o)[1]])[$record->$key] ?? $record->$key }}@else{{ $record->$key ?? '—' }}@endif</td>@endforeach<td>
-<div class="actions">@if($resource==='customers')<a href="{{ url('/customers/'.$record->id) }}">Ver perfil</a>@endif @if(auth()->user()->allows($spec['module'],true))<a href="{{ url('/records/'.$resource.'/'.$record->id.'/edit') }}">Editar</a>@if(in_array($resource,['suppliers','goals']))<form method="post" action="{{ url('/records/'.$resource.'/'.$record->id.'/delete') }}" data-confirm="Excluir este cadastro?">@csrf<button class="danger-button">Excluir</button></form>@endif
+<div class="actions">@if($resource==='customers')<a href="{{ url('/customers/'.$record->id) }}">Ver perfil</a>@endif @if(auth()->user()->allows($spec['module'],true))<a class="record-action" href="{{ url('/records/'.$resource.'/'.$record->id.'/edit') }}">Editar</a>@if(in_array($resource,['suppliers','goals','products']))<form method="post" action="{{ url('/records/'.$resource.'/'.$record->id.'/delete') }}" data-confirm="Excluir este cadastro?">@csrf<button class="record-action">Excluir</button></form>@endif
 @endif</div>
 </td>
 </tr>@empty<tr>

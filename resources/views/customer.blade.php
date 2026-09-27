@@ -40,7 +40,7 @@
 <h2>Dados e relacionamento</h2><p>Vencimento mensal: dia {{ $customer->due_day }}.</p>@foreach(['document'=>'CPF/CNPJ','address'=>'Endereço','district'=>'Bairro','city'=>'Cidade','birthday'=>'Nascimento','tags'=>'Tags','source'=>'Origem','notes'=>'Observações'] as $k=>$v)<dl class="list-detail">
 <dt>{{ $v }}</dt>
 <dd>{{ $customer->$k ?? '—' }}</dd>
-</dl>@endforeach<p>E-mail promocional: {{ $customer->email_consent ? 'Autorizado' : 'Não autorizado' }}<br>WhatsApp promocional: {{ $customer->whatsapp_consent ? 'Autorizado' : 'Não autorizado' }}</p>@if($customer->whatsapp && $customer->whatsapp_consent)<a class="button secondary" target="_blank" rel="noopener" href="https://wa.me/{{ preg_replace('/\D/','',$customer->whatsapp) }}">Abrir WhatsApp</a>@endif
+</dl>@endforeach<p>Mensagens por e-mail: {{ $customer->email_consent ? 'Autorizado' : 'Não autorizado' }}<br>Mensagens por WhatsApp: {{ $customer->whatsapp_consent ? 'Autorizado' : 'Não autorizado' }}</p>@if($customer->whatsapp && $customer->whatsapp_consent)<a class="button secondary" target="_blank" rel="noopener" href="https://wa.me/{{ preg_replace('/\D/','',$customer->whatsapp) }}">Abrir WhatsApp</a>@endif
 @if($company->enabled('portal'))<div class="actions separated">
 <form method="post" action="{{ url('/customers/'.$customer->id.'/portal') }}">@csrf<button>Gerar link do portal</button>
 </form>

@@ -29,6 +29,9 @@ class ResourceController extends Controller
     {
         $spec = $this->spec($resource);
         $q = $this->t->query($resource);
+        if ($resource === 'products') {
+            $q->whereNull('deleted_at');
+        }
         if ($resource === 'customers') {
             $q = app(Analytics::class)->customers($r->string('segment')->toString() ?: 'all');
         }
@@ -44,6 +47,7 @@ class ResourceController extends Controller
     {
         $spec = $this->spec($resource, true);
         $record = $id ? $this->t->find($resource, $id) : null;
+        abort_if($resource === 'products' && $record?->deleted_at, 404);
         $customers = $resource === 'coupons' ? $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->limit(1000)->get() : collect();
 
         return view('record-form', compact('resource', 'spec', 'record', 'customers'));
@@ -53,6 +57,7 @@ class ResourceController extends Controller
     {
         $spec = $this->spec($resource, true);
         $before = $id ? $this->t->find($resource, $id) : null;
+        abort_if($resource === 'products' && $before?->deleted_at, 404);
         abort_if($resource === 'customers' && $before?->anonymized_at, 422, 'Cliente anonimizado.');
         $rules = array_map(fn ($f) => $f[2], $spec['fields']);
         if ($resource === 'coupons') {
@@ -135,14 +140,14 @@ class ResourceController extends Controller
 
     public function destroy(string $resource, int $id)
     {
-        abort_unless(in_array($resource, ['suppliers', 'goals']), 404);
+        abort_unless(in_array($resource, ['suppliers', 'goals', 'products']), 404);
         $this->spec($resource, true);
         DB::transaction(function () use ($resource, $id) {
             $this->t->lock();
             $record = $this->t->find($resource, $id);
             $this->t->audit('record.deleted', $resource, $id, $record);
-            if ($resource === 'suppliers') {
-                $this->t->update($resource, $id, ['deleted_at' => now()]);
+            if (in_array($resource, ['suppliers', 'products'])) {
+                $this->t->update($resource, $id, ['deleted_at' => now()] + ($resource === 'products' ? ['active' => false] : []));
             } else {
                 $this->t->query($resource)->where('id', $id)->delete();
             }

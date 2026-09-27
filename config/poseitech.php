@@ -21,7 +21,7 @@ return [
             'address' => ['Endereço', 'text', 'nullable|string|max:255'], 'district' => ['Bairro', 'text', 'nullable|string|max:100'],
             'city' => ['Cidade', 'text', 'nullable|string|max:100'], 'tags' => ['Tags', 'text', 'nullable|string|max:255'],
             'source' => ['Origem', 'text', 'nullable|string|max:100'], 'notes' => ['Observações', 'textarea', 'nullable|string|max:3000'],
-            'email_consent' => ['Aceita promoções por e-mail', 'checkbox', 'boolean'], 'whatsapp_consent' => ['Aceita promoções por WhatsApp', 'checkbox', 'boolean'],
+            'email_consent' => ['Aceita mensagens por e-mail', 'checkbox', 'boolean'], 'whatsapp_consent' => ['Aceita mensagens por WhatsApp', 'checkbox', 'boolean'],
         ]],
         'products' => ['title' => 'Produtos e serviços', 'module' => 'products', 'fields' => [
             'name' => ['Nome', 'text', 'required|string|max:160'], 'code' => ['Código', 'text', 'nullable|string|max:50'],

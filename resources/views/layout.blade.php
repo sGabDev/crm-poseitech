@@ -33,7 +33,8 @@
 @endforeach
 @can('manage-company')<span class="nav-label">GERENCIAR</span>
 <a href="{{ url('/alerts') }}">Notificações</a>
-<a href="{{ url('/settings') }}">Configurações e módulos</a>@endcan
+@endcan
+<a href="{{ url('/settings') }}">Configurações</a>
 @endif
 @can('platform')<a href="{{ url('/admin') }}">Super Admin PoseiTech</a>@endcan
 </nav>

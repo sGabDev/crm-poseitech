@@ -66,7 +66,7 @@
 </tr>
 </thead>
 <tbody>@foreach($transactions as $entry)<tr>
-<td>{{ $entry->created_at }}</td>
+<td>{{ \Carbon\Carbon::parse($entry->created_at)->timezone($company->timezone)->format('d/m/Y H:i:s') }}</td>
 <td>{{ $entry->description }}</td>
 <td>{{ config('poseitech.payment_labels.'.$entry->method) }}</td>
 <td>{{ \App\Services\Tenant::money($entry->amount) }}</td>
@@ -97,8 +97,8 @@
 </tr>
 </thead>
 <tbody>@foreach($history as $h)<tr>
-<td>{{ $h->created_at }}</td>
-<td>{{ $h->closed_at ?? 'Aberto' }}</td>
+<td>{{ \Carbon\Carbon::parse($h->created_at)->timezone($company->timezone)->format('d/m/Y H:i:s') }}</td>
+<td>{{ $h->closed_at ? \Carbon\Carbon::parse($h->closed_at)->timezone($company->timezone)->format('d/m/Y H:i:s') : 'Aberto' }}</td>
 <td>#{{ $h->user_id }}</td>
 <td>{{ \App\Services\Tenant::money($h->expected) }}</td>
 <td>{{ \App\Services\Tenant::money($h->counted) }}</td>

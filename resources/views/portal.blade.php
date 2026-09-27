@@ -39,7 +39,7 @@
 <strong>Total {{ \App\Services\Tenant::money($sale->total) }}</strong>
 </div>
 </section>@empty<div class="card empty">Nenhuma compra neste período.</div>@endforelse{{ $sales->links() }}<section class="card">
-<h2>Parcelas e valores pendentes</h2>@include('components.accounts',['readonly'=>true])</section>
+<h2>Valores pendentes</h2>@include('components.accounts',['readonly'=>true])</section>
 <section class="card">
 <div class="section-heading">
 <h2>Extrato da conta</h2>

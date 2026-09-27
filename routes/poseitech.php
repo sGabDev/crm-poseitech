@@ -21,6 +21,8 @@ Route::middleware('guest')->group(function () {
     Route::post('/reset-password', [AuthController::class, 'reset'])->middleware('throttle:5,1');
 });
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth');
+Route::get('/password/change', fn () => view('password-change', ['public' => true]))->middleware('auth');
+Route::post('/password/change', [AuthController::class, 'changePassword'])->middleware(['auth', 'throttle:10,1']);
 Route::get('/portal/access/{token}', [PortalController::class, 'access'])->middleware('throttle:10,1');
 Route::get('/portal', [PortalController::class, 'home']);
 Route::post('/portal/logout', [PortalController::class, 'logout']);
