@@ -59,7 +59,7 @@
 <span class="dot">
 </span>
 </div>@forelse($methods as $method)<div class="metric-row">
-<span>{{ config('poseitech.methods.'.$method->method) }}</span>
+<span>{{ config('poseitech.payment_labels.'.$method->method) }}</span>
 <strong>{{ \App\Services\Tenant::money($method->total) }}</strong>
 </div>
 <div class="progress">

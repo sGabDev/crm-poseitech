@@ -78,3 +78,15 @@ Execute `php scripts/hostinger.php` e consulte o final de `poseitech/storage/log
 Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizado no seu plano ou pelo responsável pela hospedagem. Não há instalador web público que exponha comandos administrativos.
 
 Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
+# Atualização: fiado por cliente
+
+Depois de enviar os arquivos atualizados, execute na pasta que contém `artisan`:
+
+```bash
+/opt/alt/php83/usr/bin/php artisan migrate --force
+/opt/alt/php83/usr/bin/php artisan config:clear
+/opt/alt/php83/usr/bin/php artisan route:clear
+/opt/alt/php83/usr/bin/php artisan view:clear
+```
+
+A migração mantém as vendas e os pagamentos existentes e prepara o saldo devedor por cliente. Clientes existentes recebem dia de vencimento 5; ajuste no cadastro quando necessário. Nos meses sem o dia escolhido (por exemplo, 31), o vencimento usa o último dia do mês. Preserve o `.env` e a `APP_KEY` atuais.

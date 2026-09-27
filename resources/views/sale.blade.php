@@ -14,12 +14,12 @@
 <strong>{{ \App\Services\Tenant::money($sale->total) }}</strong>
 </div>
 <div class="kpi">
-<span>Recebido</span>
-<strong>{{ \App\Services\Tenant::money($sale->paid) }}</strong>
+<span>Forma de pagamento</span>
+<strong>{{ \App\Services\Commerce::paymentLabel($sale) }}</strong>
 </div>
 <div class="kpi">
 <span>Status</span>
-<strong>{{ $sale->status==='cancelled' ? 'Cancelada' : 'Concluída' }}</strong>
+<strong>{{ $sale->status==='cancelled' ? 'Cancelada' : ($sale->fiado_amount>0 ? 'Fiado' : 'Pago') }}</strong>
 </div>
 </div>
 <section class="card">@include('components.items')<p>Desconto: {{ \App\Services\Tenant::money($sale->discount) }} · Acréscimos: {{ \App\Services\Tenant::money($sale->extra) }}</p>
@@ -32,11 +32,10 @@
 </section>
 <section class="card">
 <h2>Pagamentos</h2>@foreach($payments as $p)<div class="metric-row">
-<span>{{ config('poseitech.methods.'.$p->method) }} · {{ $p->created_at }} {{ $p->reversed_at ? '(estornado)' : '' }}</span>
+<span>{{ config('poseitech.payment_labels.'.$p->method) }} · {{ $p->created_at }} {{ $p->reversed_at ? '(estornado)' : '' }}</span>
 <strong>{{ \App\Services\Tenant::money($p->amount) }}</strong>
 </div>@endforeach</section>
-<section class="card">
-<h2>Parcelas</h2>@include('components.accounts')</section>@can('manage-company')@if($sale->status!=='cancelled')<details class="card">
+@can('manage-company')@if($sale->status!=='cancelled')<details class="card">
 <summary>Cancelar venda e estornar lançamentos</summary>
 <form class="filters" method="post" action="{{ url('/sales/'.$sale->id.'/cancel') }}" data-confirm="Cancelar a venda, devolver pagamentos e repor o estoque?">@csrf<label>Motivo<input name="reason" required minlength="5" maxlength="500">
 </label>

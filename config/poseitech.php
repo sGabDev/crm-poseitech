@@ -3,17 +3,20 @@
 return [
     'modules' => [
         'sales' => 'Vendas', 'customers' => 'Clientes / CRM', 'products' => 'Produtos e serviços',
-        'stock' => 'Estoque', 'cash' => 'Caixa', 'credit' => 'Fiados', 'finance' => 'Financeiro',
+        'stock' => 'Estoque', 'cash' => 'Caixa', 'credit' => 'Fiados', 'finance' => 'Fornecedores e relatórios',
         'campaigns' => 'Campanhas', 'loyalty' => 'Fidelidade', 'orders' => 'Pedidos',
         'delivery' => 'Delivery', 'catalog' => 'Catálogo público', 'portal' => 'Portal do cliente',
     ],
     'defaults' => ['sales', 'customers', 'products', 'cash', 'credit', 'finance', 'portal'],
-    'methods' => ['cash' => 'Dinheiro', 'pix' => 'PIX', 'debit' => 'Débito', 'credit' => 'Crédito', 'boleto' => 'Boleto', 'other' => 'Outros'],
+    'methods' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix'],
+    'payment_labels' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'credit' => 'Cartão', 'debit' => 'Cartão', 'boleto' => 'Boleto', 'other' => 'Outros'],
+    'sale_methods' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'fiado' => 'Fiado'],
     'order_statuses' => ['received' => 'Recebido', 'confirmed' => 'Confirmado', 'preparing' => 'Preparando', 'ready' => 'Pronto', 'shipping' => 'Saiu para entrega', 'delivered' => 'Entregue', 'cancelled' => 'Cancelado'],
     'resources' => [
         'customers' => ['title' => 'Clientes', 'module' => 'customers', 'fields' => [
             'name' => ['Nome', 'text', 'required|string|max:160'], 'document' => ['CPF/CNPJ', 'text', 'nullable|string|max:20'],
-            'phone' => ['Telefone', 'text', 'nullable|string|max:30'], 'whatsapp' => ['WhatsApp', 'text', 'nullable|string|max:30'],
+            'phone' => ['Telefone / WhatsApp', 'tel', 'nullable|string|max:30'],
+            'due_day' => ['Dia de vencimento mensal (1 a 31)', 'number', 'required|integer|min:1|max:31'],
             'email' => ['E-mail', 'email', 'nullable|email|max:180'], 'birthday' => ['Nascimento', 'date', 'nullable|date|before:today'],
             'address' => ['Endereço', 'text', 'nullable|string|max:255'], 'district' => ['Bairro', 'text', 'nullable|string|max:100'],
             'city' => ['Cidade', 'text', 'nullable|string|max:100'], 'tags' => ['Tags', 'text', 'nullable|string|max:255'],

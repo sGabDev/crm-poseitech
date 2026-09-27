@@ -5,8 +5,7 @@
 <th>Venda</th>
 <th>Data</th>
 <th>Total</th>
-<th>Recebido</th>
-<th>Pendente</th>
+<th>Forma de pagamento</th>
 <th>Status</th>
 </tr>
 </thead>
@@ -16,13 +15,12 @@
 </td>
 <td>{{ \Carbon\Carbon::parse($sale->created_at)->timezone($company->timezone)->format('d/m/Y H:i') }}</td>
 <td>{{ \App\Services\Tenant::money($sale->total) }}</td>
-<td>{{ \App\Services\Tenant::money($sale->paid) }}</td>
-<td>{{ \App\Services\Tenant::money($sale->status==='cancelled' ? 0 : $sale->total-$sale->paid) }}</td>
+<td>{{ \App\Services\Commerce::paymentLabel($sale) }}</td>
 <td>
-<span class="badge {{ $sale->status==='cancelled' ? 'danger' : '' }}">{{ $sale->status==='cancelled' ? 'Cancelada' : ($sale->paid===$sale->total ? 'Paga' : 'A receber') }}</span>
+<span class="badge {{ $sale->status==='cancelled' ? 'danger' : '' }}">{{ $sale->status==='cancelled' ? 'Cancelada' : ($sale->fiado_amount>0 ? 'Fiado' : 'Pago') }}</span>
 </td>
 </tr>@empty<tr>
-<td class="empty" colspan="6">Nenhuma venda encontrada no período.</td>
+<td class="empty" colspan="5">Nenhuma venda encontrada no período.</td>
 </tr>@endforelse</tbody>
 </table>
 </div>

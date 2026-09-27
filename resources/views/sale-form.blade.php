@@ -30,21 +30,16 @@
 </section>
 <section class="card">
 <h2>Pagamento</h2>
-<p class="muted">Informe apenas o valor aplicado à venda, sem incluir troco. O saldo restante será lançado como fiado.</p>
-<div id="sale-payments">@foreach(old('payments',[['method'=>'pix','amount'=>0]]) as $index=>$payment)<div class="payment-line">
-<label>Forma<select name="payments[{{ $index }}][method]">@foreach(config('poseitech.methods') as $k=>$v)<option value="{{ $k }}" @selected($payment['method']===$k)>{{ $v }}</option>@endforeach</select>
+<p class="muted">Com uma única forma, o valor é preenchido automaticamente. Em pagamentos divididos, o fiado corresponde ao restante.</p>
+<input type="hidden" name="auto_payment" id="auto-payment" value="1"><div id="sale-payments">@foreach(old('payments',[['method'=>'pix','amount'=>0]]) as $index=>$payment)<div class="payment-line">
+<label>Forma<select name="payments[{{ $index }}][method]">@foreach(config('poseitech.sale_methods') as $k=>$v)<option value="{{ $k }}" @selected($payment['method']===$k)>{{ $v }}</option>@endforeach</select>
 </label>
-<label>Recebido ({{ $company->currency ?? 'BRL' }})<input type="number" class="payment-amount" name="payments[{{ $index }}][amount]" step="0.01" min="0" value="{{ $payment['amount'] }}" required>
+<label>Valor ({{ $company->currency ?? 'BRL' }})<input type="number" class="payment-amount" name="payments[{{ $index }}][amount]" step="0.01" min="0" value="{{ $payment['amount'] }}" required>
 </label>
 <button type="button" class="icon-button remove-line" aria-label="Remover pagamento">×</button>
 </div>@endforeach</div>
 <button type="button" id="add-payment" class="secondary">+ Outra forma de pagamento</button>
-<div class="form-grid separated">
-<label>Primeiro vencimento<input type="date" name="due_date" value="{{ old('due_date',now()->addDays(30)->toDateString()) }}">
-</label>
-<label>Parcelas do saldo<input type="number" name="installments" min="1" max="36" value="{{ old('installments',1) }}" required>
-</label>
-</div>
+<p class="muted">O fiado será somado à dívida do cliente, com vencimento no dia definido no cadastro.</p>
 </section>
 @if($company->enabled('orders'))<section class="card">
 <h2>Pedido</h2>
@@ -76,7 +71,7 @@
 <strong id="sale-total">R$ 0,00</strong>
 </div>
 <div class="metric-row">
-<span>Saldo pendente</span>
+<span>Valor em fiado</span>
 <strong id="sale-pending">R$ 0,00</strong>
 </div>
 <label>Observação<textarea name="notes" rows="3">{{ old('notes') }}</textarea>

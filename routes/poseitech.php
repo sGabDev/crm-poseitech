@@ -43,6 +43,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/records/{resource}', [ResourceController::class, 'index']);
     Route::get('/records/{resource}/new', [ResourceController::class, 'form']);
     Route::get('/records/{resource}/{id}/edit', [ResourceController::class, 'form'])->whereNumber('id');
+    Route::post('/records/{resource}/{id}/delete', [ResourceController::class, 'destroy'])->whereNumber('id');
+    Route::post('/customers/{id}/debt-payment', [BusinessController::class, 'receiveDebt'])->whereNumber('id');
     Route::post('/records/{resource}/{id?}', [ResourceController::class, 'save'])->whereNumber('id');
     Route::get('/customers/{id}', [ResourceController::class, 'customer'])->whereNumber('id');
     Route::post('/customers/{id}/privacy', [ResourceController::class, 'privacy'])->whereNumber('id');
@@ -57,8 +59,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/sales/{id}/email', [CampaignController::class, 'receipt'])->whereNumber('id')->middleware('throttle:5,1');
     Route::get('/cash', [BusinessController::class, 'cash']);
     Route::post('/cash', [BusinessController::class, 'cashAction']);
-    Route::get('/finance', [BusinessController::class, 'finance']);
-    Route::get('/credit', [BusinessController::class, 'finance']);
+    Route::redirect('/finance', '/credit');
+    Route::get('/credit', [BusinessController::class, 'debtors']);
     Route::post('/accounts', [BusinessController::class, 'account']);
     Route::post('/accounts/{id}/pay', [BusinessController::class, 'settle'])->whereNumber('id');
     Route::post('/accounts/{id}/email', [CampaignController::class, 'billing'])->whereNumber('id')->middleware('throttle:5,1');

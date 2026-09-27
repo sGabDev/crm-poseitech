@@ -88,20 +88,28 @@ class Commerce
             if ($total <= 0 || $total > 99999999999) {
                 $this->fail('Total da venda inválido.');
             }
-            $payments = collect($d['payments'] ?? [])->filter(fn ($p) => Tenant::cents($p['amount'] ?? 0) > 0);
+            $submitted = collect($d['payments'] ?? []);
+            if (count($submitted) === 1 && ! empty($d['auto_payment'])) {
+                $submitted = $submitted->map(fn ($p) => array_merge($p, ['amount' => number_format($total / 100, 2, '.', '')]));
+            }
+            $payments = $submitted->filter(fn ($p) => $p['method'] !== 'fiado' && Tenant::cents($p['amount'] ?? 0) > 0);
             $paid = $payments->sum(fn ($p) => Tenant::cents($p['amount']));
             if ($paid > $total) {
                 $this->fail('Os pagamentos excedem o total da venda. Informe o valor recebido sem o troco.');
             }
             if ($paid < $total) {
                 $this->t->authorize('credit', true);
-                if (! $customer || empty($d['due_date'])) {
-                    $this->fail('Selecione um cliente e vencimento para o saldo pendente.');
+                if (! $customer) {
+                    $this->fail('Selecione um cliente para registrar fiado.');
                 }
+            }
+            $methods = $payments->pluck('method')->unique()->values()->all();
+            if ($paid < $total) {
+                $methods[] = 'fiado';
             }
             $saleId = $this->t->insert('sales', ['customer_id' => $customer?->id, 'user_id' => auth()->id(), 'coupon_id' => $coupon?->id,
                 'subtotal' => $subtotal, 'discount' => $discount, 'extra' => $extra, 'total' => $total, 'cost' => $cost, 'paid' => $paid,
-                'notes' => $d['notes'] ?? null, 'receipt_hash' => hash('sha256', Str::random(64)), 'request_key' => $d['request_key']]);
+                'notes' => $d['notes'] ?? null, 'receipt_hash' => hash('sha256', Str::random(64)), 'request_key' => $d['request_key'], 'payment_methods' => json_encode($methods), 'fiado_amount' => $total - $paid]);
             foreach ($items as $line) {
                 $p = $line['p'];
                 $qty = $line['quantity'];
@@ -116,17 +124,9 @@ class Commerce
                 $this->payment($saleId, null, $customer?->id, Tenant::cents($p['amount']), $p['method'], 'in');
             }
             if ($paid < $total) {
-                $count = min((int) ($d['installments'] ?? 1), 36);
-                $remaining = $total - $paid;
-                $part = intdiv($remaining, $count);
-                if ($part < 1) {
-                    $this->fail('O valor é insuficiente para a quantidade de parcelas.');
-                }
-                for ($i = 0; $i < $count; $i++) {
-                    $this->t->insert('accounts', ['type' => 'receivable', 'description' => 'Venda #'.$saleId.' • parcela '.($i + 1).'/'.$count,
-                        'customer_id' => $customer->id, 'sale_id' => $saleId, 'amount' => $part + ($i === $count - 1 ? $remaining % $count : 0),
-                        'due_date' => Carbon::parse($d['due_date'])->addMonthsNoOverflow($i)->toDateString(), 'origin' => 'credit']);
-                }
+                $this->t->insert('accounts', ['type' => 'receivable', 'description' => 'Fiado venda #'.$saleId,
+                    'customer_id' => $customer->id, 'sale_id' => $saleId, 'amount' => $total - $paid,
+                    'due_date' => $this->nextDueDate($customer->due_day), 'origin' => 'credit']);
             }
             if ($coupon) {
                 $this->t->query('coupons')->where('id', $coupon->id)->increment('uses');
@@ -187,6 +187,9 @@ class Commerce
                 $this->fail('Valor superior ao saldo ou conta já encerrada.');
             }
             $paymentId = $this->payment($a->sale_id, $a->id, $a->customer_id, $amount, $d['method'], $a->type === 'receivable' ? 'in' : 'out');
+            if (! empty($d['debt_receipt_id'])) {
+                $this->t->update('payments', $paymentId, ['debt_receipt_id' => $d['debt_receipt_id']]);
+            }
             if (! empty($d['request_key'])) {
                 $this->t->update('payments', $paymentId, ['request_key' => $d['request_key']]);
             }
@@ -213,6 +216,63 @@ class Commerce
         }
         $this->t->update('products', $id, ['stock' => $p->stock + $delta]);
         $this->t->insert('stock_movements', ['product_id' => $id, 'sale_id' => $sale, 'user_id' => auth()->id(), 'type' => $type, 'quantity' => $delta, 'balance' => $p->stock + $delta, 'notes' => $notes]);
+    }
+
+    public function nextDueDate(int $day): string
+    {
+        $today = now($this->t->company->timezone)->startOfDay();
+        $due = $today->copy()->day(min($day, $today->daysInMonth));
+        if ($due->lt($today)) {
+            $due = $today->copy()->startOfMonth()->addMonth();
+            $due->day(min($day, $due->daysInMonth));
+        }
+
+        return $due->toDateString();
+    }
+
+    public function settleCustomer(int $id, array $d): void
+    {
+        $this->t->authorize('credit', true);
+        DB::transaction(function () use ($id, $d) {
+            $this->t->lock();
+            $this->t->find('customers', $id);
+            $previous = $this->t->query('debt_receipts')->where('request_key', $d['request_key'])->first();
+            if ($previous) {
+                if ($previous->customer_id !== $id) {
+                    $this->fail('Identificador de pagamento já utilizado.');
+                }
+
+return;
+            }
+            $accounts = $this->t->query('accounts')->where('customer_id', $id)->where('origin', 'credit')->where('status', 'pending')->orderBy('due_date')->orderBy('id')->get();
+            $amount = Tenant::cents($d['amount']);
+            $balance = $accounts->sum(fn ($a) => $a->amount - $a->paid);
+            if ($amount <= 0 || $amount > $balance) {
+                $this->fail('Informe um pagamento entre um centavo e o saldo devedor do cliente.');
+            }
+            $receipt = $this->t->insert('debt_receipts', ['customer_id' => $id, 'amount' => $amount, 'method' => $d['method'], 'request_key' => $d['request_key']]);
+            $remaining = $amount;
+            foreach ($accounts as $a) {
+                if (! $remaining) {
+                    break;
+                }$part = min($remaining, $a->amount - $a->paid);
+                $this->settle($a->id, ['amount' => number_format($part / 100, 2, '.', ''), 'method' => $d['method'], 'debt_receipt_id' => $receipt]);
+                $remaining -= $part;
+            }
+            $this->t->audit('customer.debt_payment', 'customers', $id, ['balance' => $balance], ['paid' => $amount, 'balance' => $balance - $amount]);
+        }, 3);
+    }
+
+    public static function paymentLabel(object $sale): string
+    {
+        $methods = json_decode($sale->payment_methods ?? '[]', true) ?: [];
+        $labels = ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'credit' => 'Cartão', 'debit' => 'Cartão', 'boleto' => 'Boleto', 'other' => 'Outros'];
+        $paid = array_values(array_unique(array_map(fn ($m) => $labels[$m] ?? $m, array_filter($methods, fn ($m) => $m !== 'fiado'))));
+        if (($sale->fiado_amount ?? 0) > 0) {
+            return $paid ? 'Pago + Fiado ('.implode(', ', $paid).')' : 'Fiado';
+        }
+
+        return implode(' + ', $paid) ?: 'Pago';
     }
 
     public function expected(object $register): int

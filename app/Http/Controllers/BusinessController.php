@@ -19,7 +19,7 @@ class BusinessController extends Controller
     public function dashboard(Request $r)
     {
         if (! $this->t->company->enabled('sales') || ! auth()->user()->allows('sales')) {
-            foreach (['customers' => '/records/customers', 'products' => '/records/products', 'cash' => '/cash', 'finance' => '/finance', 'credit' => '/credit', 'stock' => '/stock', 'orders' => '/orders', 'campaigns' => '/campaigns', 'loyalty' => '/records/coupons'] as $module => $path) {
+            foreach (['customers' => '/records/customers', 'products' => '/records/products', 'cash' => '/cash', 'finance' => '/records/suppliers', 'credit' => '/credit', 'stock' => '/stock', 'orders' => '/orders', 'campaigns' => '/campaigns', 'loyalty' => '/records/coupons'] as $module => $path) {
                 if ($this->t->company->enabled($module) && auth()->user()->allows($module)) {
                     return redirect($path);
                 }
@@ -64,8 +64,8 @@ class BusinessController extends Controller
     {
         $d = $r->validate(['request_key' => 'required|uuid', 'customer_id' => 'nullable|integer', 'items' => 'required|array|min:1|max:100', 'items.*.product_id' => 'required|integer',
             'items.*.quantity' => 'required|integer|min:1|max:10000', 'items.*.addons' => 'nullable|array|max:20', 'items.*.addons.*' => 'integer|min:0|max:19', 'discount' => 'nullable|numeric|min:0', 'extra' => 'nullable|numeric|min:0',
-            'payments' => 'nullable|array|max:8', 'payments.*.method' => 'required|in:'.implode(',', array_keys(config('poseitech.methods'))),
-            'payments.*.amount' => 'required|numeric|min:0', 'due_date' => 'nullable|date', 'installments' => 'required|integer|min:1|max:36',
+            'payments' => 'required|array|min:1|max:8', 'payments.*.method' => 'required|in:'.implode(',', array_keys(config('poseitech.sale_methods'))),
+            'payments.*.amount' => 'required|numeric|min:0', 'auto_payment' => 'nullable|boolean',
             'notes' => 'nullable|string|max:3000', 'coupon' => 'nullable|string|max:40', 'order' => 'nullable|boolean', 'delivery' => 'nullable|boolean',
             'address' => 'nullable|string|max:255', 'region' => 'nullable|string|max:100', 'fee' => 'nullable|numeric|min:0']);
 
@@ -160,6 +160,31 @@ class BusinessController extends Controller
 
         return view('finance', ['credit' => $credit, 'accounts' => $q->orderBy('due_date')->paginate(20)->withQueryString(), 'totals' => $totals, 'balance' => $balance,
             'customers' => $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->limit(1000)->get(), 'suppliers' => $this->t->query('suppliers')->orderBy('name')->get()]);
+    }
+
+    public function debtors(Request $r)
+    {
+        $this->t->authorize('credit');
+        $r->validate(['sort' => 'nullable|in:balance,recent,oldest,name', 'q' => 'nullable|string|max:100']);
+        $balances = $this->t->query('accounts')->where('origin', 'credit')->where('status', 'pending')->selectRaw('customer_id, SUM(amount-paid) as debt, MAX(created_at) as last_credit, MIN(due_date) as next_due')->groupBy('customer_id')->havingRaw('SUM(amount-paid)>0');
+        $q = $this->t->query('customers')->joinSub($balances, 'balances', fn ($join) => $join->on('customers.id', '=', 'balances.customer_id'))->select('customers.*', 'balances.debt', 'balances.last_credit', 'balances.next_due');
+        if ($r->filled('q')) {
+            $q->where('customers.name', 'like', '%'.$r->input('q').'%');
+        }
+        $total = (clone $q)->sum('balances.debt');
+        match ($r->input('sort', 'balance')) {
+            'recent' => $q->orderByDesc('balances.last_credit'),'oldest' => $q->orderBy('balances.next_due'),'name' => $q->orderBy('customers.name'),default => $q->orderByDesc('balances.debt')
+        };
+
+        return view('debtors', ['customers' => $q->paginate(20)->withQueryString(), 'total' => $total]);
+    }
+
+    public function receiveDebt(Request $r, int $id)
+    {
+        $d = $r->validate(['request_key' => 'required|uuid', 'amount' => 'required|numeric|min:0.01', 'method' => 'required|in:'.implode(',', array_keys(config('poseitech.methods')))]);
+        $this->commerce->settleCustomer($id, $d);
+
+        return back()->with('success', 'Pagamento abatido do saldo devedor do cliente.');
     }
 
     public function account(Request $r)
@@ -344,10 +369,10 @@ class BusinessController extends Controller
             $this->t->lock();
             $this->t->find('customers', $id);
             $amount = Tenant::cents($d['amount']);
-            $balance = $this->t->query('customer_credits')->where('customer_id',$id)->sum('amount');
-            abort_if($d['direction'] === 'out' && $amount > $balance,422,'Crédito insuficiente.');
-            $this->t->insert('customer_credits',['customer_id' => $id, 'user_id' => auth()->id(), 'amount' => $d['direction'] === 'in' ? $amount : -$amount, 'description' => $d['description']]);
-            $this->t->audit('customer.credit','customers',$id,null,$d);
+            $balance = $this->t->query('customer_credits')->where('customer_id', $id)->sum('amount');
+            abort_if($d['direction'] === 'out' && $amount > $balance, 422, 'Crédito insuficiente.');
+            $this->t->insert('customer_credits', ['customer_id' => $id, 'user_id' => auth()->id(), 'amount' => $d['direction'] === 'in' ? $amount : -$amount, 'description' => $d['description']]);
+            $this->t->audit('customer.credit', 'customers', $id, null, $d);
         });
 
         return back()->with('success','Crédito atualizado.');

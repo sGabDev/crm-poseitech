@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\Plan;
 use App\Models\User;
+use App\Services\Commerce;
 use App\Services\Tenant;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -40,6 +42,73 @@ class CommerceTest extends TestCase
     {
         return array_replace(['request_key' => (string) Str::uuid(), 'customer_id' => $this->customer, 'items' => [['product_id' => $this->product, 'quantity' => 2]], 'discount' => '0', 'extra' => '0',
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
+    }
+
+    public function test_customer_debt_accepts_partial_payment_across_sales_without_duplicates(): void
+    {
+        foreach ([1, 2] as $unused) {
+            $this->post('/sales', $this->sale(['auto_payment' => 1, 'payments' => [['method' => 'fiado', 'amount' => 0]]]))->assertSessionHasNoErrors();
+        }
+        $this->assertSame(40000, (int) DB::table('accounts')->sum('amount'));
+        $request = ['request_key' => (string) Str::uuid(), 'amount' => '220', 'method' => 'pix'];
+        $this->post('/customers/'.$this->customer.'/debt-payment', $request)->assertSessionHasNoErrors();
+        $this->post('/customers/'.$this->customer.'/debt-payment', $request)->assertSessionHasNoErrors();
+        $this->assertSame(22000, (int) DB::table('accounts')->sum('paid'));
+        $this->assertSame(1, DB::table('debt_receipts')->count());
+        $this->assertSame(2, DB::table('payments')->count());
+        $this->get('/credit?sort=recent')->assertOk()->assertSee('Cliente A')->assertSee('180,00');
+        $this->get('/sales')->assertOk()->assertSee('Fiado')->assertDontSee('A receber')->assertDontSee('Pendente');
+        $this->post('/customers/'.$this->customer.'/debt-payment', array_replace($request, ['request_key' => (string) Str::uuid(), 'amount' => '181']))->assertSessionHasErrors();
+        $this->post('/customers/'.$this->customer.'/debt-payment', array_replace($request, ['request_key' => (string) Str::uuid(), 'amount' => '20', 'method' => 'cash']))->assertSessionHasErrors();
+        $this->assertSame(1, DB::table('debt_receipts')->count());
+        $this->post('/customers/'.$this->customer.'/debt-payment', array_replace($request, ['request_key' => (string) Str::uuid(), 'amount' => '180']))->assertSessionHasNoErrors();
+        $this->get('/credit')->assertOk()->assertSee('Nenhum cliente com fiado em aberto.');
+    }
+
+    public function test_single_payment_uses_server_total_and_monthly_due_day_is_clamped(): void
+    {
+        $this->post('/sales', $this->sale(['auto_payment' => 1, 'payments' => [['method' => 'card', 'amount' => 0]]]))->assertSessionHasNoErrors();
+        $this->assertSame(20000, DB::table('sales')->value('paid'));
+        $this->assertSame(0, DB::table('accounts')->count());
+        $commerce = app(Commerce::class);
+        $this->travelTo(Carbon::parse('2028-02-10 12:00:00', $this->company->timezone));
+        $this->assertSame('2028-02-29', $commerce->nextDueDate(31));
+        $this->assertSame('2028-03-05', $commerce->nextDueDate(5));
+        $this->assertSame('2028-02-10', $commerce->nextDueDate(10));
+        $this->travelBack();
+    }
+
+    public function test_customer_phone_due_day_history_and_module_selection(): void
+    {
+        $this->post('/records/customers', ['name' => 'Telefone', 'phone' => '11999998888', 'due_day' => 12])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('customers', ['name' => 'Telefone', 'phone' => '+55 (11) 99999-8888', 'whatsapp' => '+55 (11) 99999-8888', 'due_day' => 12]);
+        $this->post('/records/customers', ['name' => 'Inválido', 'due_day' => 32])->assertSessionHasErrors('due_day');
+        $this->post('/sales', $this->sale())->assertSessionHasNoErrors();
+        $this->get('/customers/'.$this->customer)->assertOk()->assertSee('Pago + Fiado')->assertDontSee('Conta do cliente / parcelas')->assertDontSee('Timeline de relacionamento')->assertDontSee('Privacidade e dados pessoais');
+        $this->company->plan->update(['modules' => ['customers']]);
+        $this->post('/settings', ['section' => 'modules', 'modules' => ['delivery', 'credit']])->assertSessionHasNoErrors();
+        $this->assertEqualsCanonicalizing(['delivery', 'credit', 'orders', 'sales', 'products', 'customers'], $this->company->fresh()->modules);
+        $this->get('/orders')->assertOk();
+        $this->get('/finance')->assertRedirect('/credit');
+    }
+
+    public function test_deletions_preserve_supplier_history_and_enforce_tenant_scope(): void
+    {
+        $t = app(Tenant::class);
+        $supplier = $t->insert('suppliers', ['name' => 'Fornecedor antigo']);
+        $account = $t->insert('accounts', ['supplier_id' => $supplier, 'type' => 'payable', 'description' => 'Compra', 'amount' => 1000, 'due_date' => now()->toDateString()]);
+        $goal = $t->insert('goals', ['name' => 'Meta', 'metric' => 'revenue', 'target' => 100, 'starts_at' => now()->toDateString(), 'ends_at' => now()->addMonth()->toDateString()]);
+        $this->post('/records/suppliers/'.$supplier.'/delete')->assertSessionHasNoErrors();
+        $this->assertNotNull(DB::table('suppliers')->where('id', $supplier)->value('deleted_at'));
+        $this->assertDatabaseHas('accounts', ['id' => $account, 'supplier_id' => $supplier]);
+        $this->get('/records/suppliers')->assertDontSee('Fornecedor antigo');
+        $this->post('/records/goals/'.$goal.'/delete')->assertSessionHasNoErrors();
+        $this->assertDatabaseMissing('goals', ['id' => $goal]);
+        $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'outra', 'modules' => []]);
+        $foreign = DB::table('suppliers')->insertGetId(['company_id' => $other->id, 'name' => 'Protegido']);
+        $this->post('/records/suppliers/'.$foreign.'/delete')->assertNotFound();
+        $this->assertDatabaseHas('suppliers', ['id' => $foreign, 'deleted_at' => null]);
+        $this->post('/records/customers/'.$this->customer.'/delete')->assertNotFound();
     }
 
     public function test_sale_installments_stock_settlement_and_cancellation_are_consistent(): void
@@ -134,7 +203,7 @@ class CommerceTest extends TestCase
     public function test_all_core_pages_render_with_business_data(): void
     {
         $this->post('/sales', $this->sale(['order' => 1, 'delivery' => 1, 'address' => 'Rua Teste, 10', 'fee' => '5']))->assertRedirect();
-        foreach (['dashboard', 'opportunities', 'records/customers', 'records/products', 'records/products/new', 'records/suppliers', 'records/coupons', 'records/goals', 'sales', 'sales/new', 'sales/1', 'customers/'.$this->customer, 'cash', 'credit', 'finance', 'stock', 'orders', 'reports', 'search?q=Produto', 'alerts', 'campaigns', 'settings', 'catalog/empresa-a'] as $path) {
+        foreach (['dashboard', 'opportunities', 'records/customers', 'records/products', 'records/products/new', 'records/suppliers', 'records/coupons', 'records/goals', 'sales', 'sales/new', 'sales/1', 'customers/'.$this->customer, 'cash', 'credit', 'stock', 'orders', 'reports', 'search?q=Produto', 'alerts', 'campaigns', 'settings', 'catalog/empresa-a'] as $path) {
             $this->get('/'.$path)->assertOk();
         }
         $this->get('/receipt/'.DB::table('sales')->value('receipt_hash'))->assertOk();
@@ -196,7 +265,7 @@ class CommerceTest extends TestCase
 
     public function test_blocked_company_and_forged_settings_are_rejected(): void
     {
-        $this->post('/settings', ['section' => 'modules', 'modules' => ['delivery']])->assertSessionHasErrors();
+        $this->post('/settings', ['section' => 'modules', 'modules' => ['unknown']])->assertSessionHasErrors();
         $this->company->update(['status' => 'blocked']);
         $this->get('/dashboard')->assertForbidden();
         $this->get('/catalog/empresa-a')->assertNotFound();
@@ -211,7 +280,7 @@ class CommerceTest extends TestCase
         }
         $this->get('/records/products/'.$this->product.'/edit')->assertOk();
         $this->post('/stock', ['product_id' => $this->product, 'type' => 'adjustment', 'quantity' => 0, 'notes' => 'Inventário sem saldo'])->assertRedirect();
-        $this->assertSame(0,DB::table('products')->value('stock'));
+        $this->assertSame(0, DB::table('products')->value('stock'));
         auth()->logout();
         foreach (['/login', '/register', '/forgot-password', '/reset-password/example-token'] as $url) {
             $this->get($url)->assertOk();

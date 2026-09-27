@@ -77,6 +77,18 @@ class ResourceController extends Controller
             }
         }
         if ($resource === 'customers') {
+            $phone = trim($d['phone'] ?? '');
+            $digits = preg_replace('/\D/', '', $phone);
+            if ($digits !== '') {
+                if (! str_starts_with($phone, '+') && strlen($digits) <= 11) {
+                    $digits = '55'.$digits;
+                }
+                if (strlen($digits) < 8 || strlen($digits) > 15 || (str_starts_with($digits, '55') && ! in_array(strlen($digits), [12, 13]))) {
+                    throw ValidationException::withMessages(['phone' => 'Informe DDI, DDD e telefone completos.']);
+                }
+                $phone = str_starts_with($digits, '55') ? '+55 ('.substr($digits, 2, 2).') '.substr($digits, 4, -4).'-'.substr($digits, -4) : '+'.$digits;
+            }
+            $d['phone'] = $d['whatsapp'] = $digits === '' ? null : $phone;
             $d['consented_at'] = now();
         }
         if ($resource === 'products') {
@@ -121,6 +133,24 @@ class ResourceController extends Controller
         return redirect('/records/'.$resource)->with('success', 'Cadastro salvo.');
     }
 
+    public function destroy(string $resource, int $id)
+    {
+        abort_unless(in_array($resource, ['suppliers', 'goals']), 404);
+        $this->spec($resource, true);
+        DB::transaction(function () use ($resource, $id) {
+            $this->t->lock();
+            $record = $this->t->find($resource, $id);
+            $this->t->audit('record.deleted', $resource, $id, $record);
+            if ($resource === 'suppliers') {
+                $this->t->update($resource, $id, ['deleted_at' => now()]);
+            } else {
+                $this->t->query($resource)->where('id', $id)->delete();
+            }
+        });
+
+        return back()->with('success', 'Cadastro excluído.');
+    }
+
     public function customer(Request $r, int $id)
     {
         $this->t->authorize('customers');
@@ -130,7 +160,13 @@ class ResourceController extends Controller
         $stats = (clone $query)->where('status', 'completed')->selectRaw('COUNT(*) as count, COALESCE(SUM(total),0) as total, COALESCE(AVG(total),0) as ticket, COALESCE(MAX(total),0) as largest, MIN(created_at) as first, MAX(created_at) as last')->first();
         $sales = (clone $query)->whereBetween('created_at', $period);
         if ($r->filled('method')) {
-            $sales->whereIn('id', $this->t->query('payments')->where('method', $r->string('method'))->whereNull('reversed_at')->select('sale_id'));
+            if ($r->input('method') === 'fiado') {
+                $sales->where('fiado_amount', '>', 0);
+            } elseif ($r->input('method') === 'card') {
+                $sales->where(fn ($q) => $q->whereJsonContains('payment_methods', 'card')->orWhereJsonContains('payment_methods', 'credit')->orWhereJsonContains('payment_methods', 'debit'));
+            } else {
+                $sales->whereJsonContains('payment_methods', (string) $r->input('method'));
+            }
         }
         if ($r->filled('status')) {
             $sales->where('status', $r->string('status'));
@@ -180,11 +216,11 @@ class ResourceController extends Controller
             $this->t->query('email_logs')->where('customer_id', $id)->update(['recipient' => 'anonimizado', 'body' => 'Removido por anonimização', 'status' => 'cancelled']);
             $this->t->query('sales')->where('customer_id', $id)->update(['notes' => null]);
             $saleIds = $this->t->query('sales')->where('customer_id', $id)->select('id');
-            $this->t->query('orders')->whereIn('sale_id',$saleIds)->update(['address' => null]);
-            $this->t->query('audit_logs')->where('entity','customers')->where('entity_id',$id)->update(['before' => null, 'after' => null]);
-            $this->t->audit('customer.anonymized','customers',$id);
+            $this->t->query('orders')->whereIn('sale_id', $saleIds)->update(['address' => null]);
+            $this->t->query('audit_logs')->where('entity', 'customers')->where('entity_id', $id)->update(['before' => null, 'after' => null]);
+            $this->t->audit('customer.anonymized', 'customers', $id);
         });
 
-        return back()->with('success','Dados pessoais anonimizados. Registros financeiros preservados.');
+        return back()->with('success', 'Dados pessoais anonimizados. Registros financeiros preservados.');
     }
 }

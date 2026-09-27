@@ -9,10 +9,10 @@
 </div>
 <section class="card">
 <h2>Módulos da empresa</h2>
-<p class="muted">Ative apenas o que sua operação utiliza. Os módulos disponíveis dependem do plano.</p>
+<p class="muted">Ative o que sua operação utiliza. As funções necessárias aos módulos selecionados serão ativadas automaticamente.</p>
 <form method="post" action="{{ url('/settings') }}" class="stack">@csrf<input type="hidden" name="section" value="modules">
 <div class="module-grid">@foreach(config('poseitech.modules') as $key=>$label)<label class="check">
-<input type="checkbox" name="modules[]" value="{{ $key }}" @checked($company->enabled($key)) @disabled(!in_array($key,$company->plan->modules))>{{ $label }}</label>@endforeach</div>
+<input type="checkbox" name="modules[]" value="{{ $key }}" @checked($company->enabled($key))>{{ $label }}</label>@endforeach</div>
 <button>Salvar módulos</button>
 </form>@if($company->enabled('catalog'))<p class="separated">Catálogo público: <a href="{{ url('/catalog/'.$company->slug) }}" target="_blank">{{ url('/catalog/'.$company->slug) }}</a>
 </p>@endif</section>

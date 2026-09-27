@@ -1,6 +1,6 @@
 <section class="card">
 <h2>Preferências e cupons</h2>
-<p>Pagamento mais utilizado: <strong>{{ config('poseitech.methods.'.$preferred) ?? 'Sem histórico' }}</strong>
+<p>Pagamento mais utilizado: <strong>{{ config('poseitech.payment_labels.'.$preferred) ?? 'Sem histórico' }}</strong>
 </p>@foreach($usedCoupons as $used)<div class="metric-row">
 <span>{{ $used->code }} · Venda #{{ $used->id }}</span>
 <small>{{ $used->created_at }}</small>

@@ -22,7 +22,7 @@ class Company extends Model
 
     public function enabled(string $module): bool
     {
-        return in_array($module, $this->modules ?? []) && in_array($module, $this->plan->modules ?? []);
+        return array_key_exists($module, config('poseitech.modules')) && in_array($module, $this->modules ?? []);
     }
 
     public function available(): bool

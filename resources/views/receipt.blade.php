@@ -28,7 +28,7 @@
 <strong>{{ \App\Services\Tenant::money($sale->total) }}</strong>
 </div>
 <h2>Pagamentos</h2>@foreach($payments as $p)<div class="metric-row">
-<span>{{ config('poseitech.methods.'.$p->method) }} {{ $p->reversed_at ? ' · Estornado' : '' }}</span>
+<span>{{ config('poseitech.payment_labels.'.$p->method) }} {{ $p->reversed_at ? ' · Estornado' : '' }}</span>
 <strong>{{ \App\Services\Tenant::money($p->amount) }}</strong>
 </div>@endforeach<p>Saldo pendente: {{ \App\Services\Tenant::money($sale->status==='cancelled' ? 0 : $sale->total-$sale->paid) }}</p>
 <hr>

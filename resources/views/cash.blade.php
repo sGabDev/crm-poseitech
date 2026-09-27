@@ -49,7 +49,7 @@
 <button>Fechar caixa</button>
 </form>
 <hr>@foreach($transactions->groupBy('method') as $method=>$rows)<div class="metric-row">
-<span>{{ config('poseitech.methods.'.$method) }}</span>
+<span>{{ config('poseitech.payment_labels.'.$method) }}</span>
 <strong>{{ \App\Services\Tenant::money($rows->sum('amount')) }}</strong>
 </div>@endforeach</section>
 </div>
@@ -68,7 +68,7 @@
 <tbody>@foreach($transactions as $entry)<tr>
 <td>{{ $entry->created_at }}</td>
 <td>{{ $entry->description }}</td>
-<td>{{ config('poseitech.methods.'.$entry->method) }}</td>
+<td>{{ config('poseitech.payment_labels.'.$entry->method) }}</td>
 <td>{{ \App\Services\Tenant::money($entry->amount) }}</td>
 </tr>@endforeach</tbody>
 </table>

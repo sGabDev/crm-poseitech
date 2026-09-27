@@ -75,7 +75,7 @@
 </div>@endforeach</section>
 <section class="card">
 <h2>Formas de pagamento</h2>@foreach($methods as $m)<div class="metric-row">
-<span>{{ config('poseitech.methods.'.$m->method) }}</span>
+<span>{{ config('poseitech.payment_labels.'.$m->method) }}</span>
 <strong>{{ \App\Services\Tenant::money($m->total) }}</strong>
 </div>@endforeach</section>
 <section class="card">

@@ -40,11 +40,14 @@ class SettingsController extends Controller
             $company->update($d);
         } elseif ($section === 'modules') {
             $r->validate(['modules' => 'nullable|array', 'modules.*' => ['string', Rule::in(array_keys(config('poseitech.modules')))]]);
-            $modules = array_values(array_intersect($r->input('modules', []), $company->plan->modules));
+            $modules = array_values(array_unique($r->input('modules', [])));
             foreach (['delivery' => ['orders'], 'orders' => ['sales', 'products'], 'stock' => ['products'], 'sales' => ['products'], 'credit' => ['sales', 'customers'], 'campaigns' => ['customers'], 'portal' => ['customers'], 'loyalty' => ['customers']] as $module => $dependencies) {
                 if (in_array($module, $modules) && array_diff($dependencies, $modules)) {
-                    throw ValidationException::withMessages(['modules' => config('poseitech.modules.'.$module).' depende de: '.implode(', ', array_map(fn ($m) => config('poseitech.modules.'.$m), $dependencies))]);
+                    $modules = array_values(array_unique(array_merge($modules, $dependencies)));
                 }
+            }
+            if (in_array('sales', $modules) && ! in_array('products', $modules)) {
+                $modules[] = 'products';
             }
             if (! in_array('cash', $modules) && $this->t->query('cash_registers')->whereNull('closed_at')->exists()) {
                 throw ValidationException::withMessages(['modules' => 'Feche o caixa antes de desativar o módulo.']);
