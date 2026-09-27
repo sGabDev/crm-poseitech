@@ -1,12 +1,32 @@
 # Instalação na Hostinger
 
+## PHP 8.3 no hPanel, mas PHP 8.1 no terminal
+
+A versão do site e a versão do SSH são independentes. Envie o `scripts/hostinger.php` atualizado: quando iniciado em PHP antigo, ele procura o PHP 8.3, 8.4 ou 8.2 nos caminhos da Hostinger e reinicia automaticamente, se a hospedagem permitir iniciar processos.
+
+Para usar diretamente o PHP 8.3, sem depender do comando `php` do terminal:
+
+```sh
+cd /home/u382808979/domains/crm.poseitech.com.br/public_html
+/opt/alt/php83/usr/bin/php scripts/hostinger.php --php-info
+/opt/alt/php83/usr/bin/php scripts/hostinger.php --install
+```
+
+Se o `.env` estiver ausente, `--install` cria um modelo de produção e para. Abra o arquivo **oculto** `.env` na pasta indicada, preencha `APP_URL=https://crm.poseitech.com.br` e as credenciais reais do MySQL do hPanel; repita o último comando. Modelos incompletos não executam migrations. Um `.env` existente nunca é sobrescrito.
+
+Em uma instalação que já tinha dados, restaure o `.env` original e sua APP_KEY. `--fix-key` não cria um `.env` novo automaticamente; `--init-env` prepara um modelo para uma instalação nova. O arquivo é procurado ao lado de `artisan`, tanto em `public_html` quanto na estrutura privada `poseitech`.
+
+Use `/opt/alt/php83/usr/bin/php` também nos comandos Artisan e no cron. Se esse executável não existir, use o caminho compatível informado pelo instalador ou confirme o caminho com a hospedagem. Não reduza a exigência de PHP do Laravel para 8.1.
+
+[A Hostinger explica a diferença entre o PHP do site e o PHP do SSH/Composer](https://www.hostinger.com/support/5792082-how-to-solve-common-composer-issues-at-hostinger/).
+
 ## Correção da instalação atual: APP_KEY ausente
 
 O log informado mostra `MissingAppKeyException`. Envie o arquivo atualizado `scripts/hostinger.php` para a instalação e execute no terminal:
 
 ```sh
 cd /home/u382808979/domains/crm.poseitech.com.br/public_html
-php scripts/hostinger.php --fix-key
+/opt/alt/php83/usr/bin/php scripts/hostinger.php --fix-key
 ```
 
 O comando limpa caches gerados, mantém qualquer chave já existente no `.env` e gera uma apenas quando estiver ausente. Não altera banco, usuários, senhas ou credenciais. Se a empresa já usou criptografia em outra instalação, restaure sua APP_KEY original antes de executá-lo. Não publique a chave nem copie uma chave de exemplo compartilhada.
@@ -22,8 +42,8 @@ Use `poseitech/` para a aplicação privada e `public_html/` para o conteúdo de
 3. No terminal SSH, entre em `poseitech` e execute:
 
 ```sh
-php scripts/hostinger.php --install
-php artisan poseitech:admin seu@email.com
+/opt/alt/php83/usr/bin/php scripts/hostinger.php --install
+/opt/alt/php83/usr/bin/php artisan poseitech:admin seu@email.com
 ```
 
 O primeiro comando verifica requisitos, cria somente pastas necessárias, remove caches gerados, gera a chave apenas se estiver ausente, aplica migrations sem apagar registros, cria planos iniciais e recompila caches no servidor. Instale as dependências com `composer install --no-dev --optimize-autoloader` ou envie a pasta `vendor` completa. Não é necessário Node ou Vite.

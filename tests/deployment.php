@@ -27,16 +27,19 @@ foreach (['bootstrap', 'config', 'routes'] as $folder) {
     $copy($root.'/'.$folder, $fixture.'/'.$folder);
 }
 copy($root.'/composer.json', $fixture.'/composer.json');
+copy($root.'/artisan', $fixture.'/artisan');
 copy($root.'/scripts/hostinger.php', $fixture.'/scripts/hostinger.php');
 file_put_contents($fixture.'/vendor/autoload.php', '<?php return require '.var_export($root.'/vendor/autoload.php', true).';');
 file_put_contents($fixture.'/.env', "APP_ENV=production\nAPP_DEBUG=false\nAPP_URL=https://crm.example.test\nDB_CONNECTION=sqlite\nDB_DATABASE=:memory:\nSESSION_DRIVER=file\nCACHE_STORE=file\n");
-$run = function () use ($fixture): void {
-    $process = new Process([PHP_BINARY, 'scripts/hostinger.php', '--fix-key'], $fixture, ['APP_KEY' => false]);
+$run = function (array $arguments = ['--fix-key'], int $expected = 0) use ($fixture): string {
+    $process = new Process([PHP_BINARY, 'scripts/hostinger.php', ...$arguments], $fixture, ['APP_KEY' => false]);
     $process->setTimeout(30);
     $process->run();
-    if (! $process->isSuccessful()) {
+    if ($process->getExitCode() !== $expected) {
         throw new RuntimeException($process->getOutput().$process->getErrorOutput());
     }
+
+    return $process->getOutput();
 };
 $remove = function (string $path) use (&$remove, $fixture): void {
     $real = realpath($path);
@@ -68,7 +71,33 @@ try {
     if (is_file($fixture.'/bootstrap/cache/config.php')) {
         throw new RuntimeException('Stale cache was retained');
     }
-    echo "Hostinger: chave ausente gerada; chave existente preservada; cache antigo removido.\n";
+    $run(['--init-env']);
+    if (file_get_contents($fixture.'/.env') !== $first) {
+        throw new RuntimeException('Environment initialization overwrote existing settings');
+    }
+    // Disposable fixture only: reproduce a missing hidden file on a fresh upload.
+    unlink($fixture.'/.env');
+    $missing = $run(['--fix-key'], 1);
+    if (! str_contains(str_replace('\\', '/', $missing), str_replace('\\', '/', $fixture).'/.env') || is_file($fixture.'/.env')) {
+        throw new RuntimeException('Missing environment repair must identify the path without inventing a key');
+    }
+    $run(['--install'], 2);
+    $template = file_get_contents($fixture.'/.env');
+    if (! str_contains($template, 'APP_ENV=production') || ! str_contains($template, 'PREENCHA_BANCO')) {
+        throw new RuntimeException('Production environment template was not created');
+    }
+    $run(['--install'], 1);
+    if (file_get_contents($fixture.'/.env') !== $template) {
+        throw new RuntimeException('Incomplete configuration should not generate keys or change settings');
+    }
+    $run(['--init-env']);
+    if (file_get_contents($fixture.'/.env') !== $template) {
+        throw new RuntimeException('Existing template was overwritten');
+    }
+    if (! str_contains($run(['--php-info']), PHP_VERSION)) {
+        throw new RuntimeException('CLI runtime diagnostics missing');
+    }
+    echo "Hostinger: chave preservada; cache removido; .env ausente tratado; modelo criado sem sobrescrita; configuração incompleta bloqueada; runtime identificado.\n";
 } finally {
     $remove($fixture);
 }
