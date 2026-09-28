@@ -60,16 +60,38 @@ class PortalController extends Controller
         abort_unless($company->available() && $company->enabled('portal'), 404);
         $this->t->company = $company;
         $customer = $this->t->query('customers')->where('id', $access['id'])->where('portal_hash', $access['hash'])->whereNull('anonymized_at')->firstOrFail();
-        $r->validate(['month' => 'nullable|date_format:Y-m']);
+        $r->validate(['month' => 'nullable|date_format:Y-m', 'scope' => 'nullable|in:month,all', 'kind' => 'nullable|in:all,fiado,paid,wallet', 'status' => 'nullable|in:all,completed,cancelled', 'purchase' => 'nullable|integer|min:1']);
         $month = $r->input('month', now($company->timezone)->format('Y-m'));
         $start = Carbon::createFromFormat('!Y-m', $month, $company->timezone)->startOfMonth();
         $monthLabel = $start->copy()->locale('pt_BR')->translatedFormat('F \\d\\e Y');
         $q = $this->t->query('sales')->where('customer_id', $customer->id)->where('created_at', '>=', $start->copy()->utc())->where('created_at', '<', $start->copy()->addMonth()->utc());
         $totals = (clone $q)->where('status', 'completed')->selectRaw('COALESCE(SUM(total),0) as total, COALESCE(SUM(paid),0) as paid')->first();
+        $monthlyIds = (clone $q)->where('status', 'completed')->pluck('id');
+        $fiadoMonth = (clone $q)->where('status', 'completed')->sum('fiado_amount');
+        if ($r->input('scope') === 'all') {
+            $q = $this->t->query('sales')->where('customer_id', $customer->id);
+        }
+        if ($r->input('kind') === 'fiado') {
+            $q->where('fiado_amount', '>', 0);
+        }
+        if ($r->input('kind') === 'paid') {
+            $q->where('status', 'completed')->whereColumn('paid', '>=', 'total');
+        }
+        if ($r->input('kind') === 'wallet') {
+            $q->where('wallet_used', '>', 0);
+        }
+        if (in_array($r->input('status'), ['completed', 'cancelled'])) {
+            $q->where('status', $r->input('status'));
+        }
+        if ($r->filled('purchase')) {
+            $q->where('id', $r->integer('purchase'));
+        }
         $sales = $q->orderByDesc('id')->paginate(15)->withQueryString();
         $accounts = $this->t->query('accounts')->where('customer_id', $customer->id)->where('type', 'receivable')->where('status', 'pending')->whereColumn('amount', '>', 'paid')->orderBy('due_date')->get();
+        $debtTotal = $accounts->where('origin', 'credit')->sum(fn ($a) => $a->amount - $a->paid);
+        $debtMonth = $accounts->where('origin', 'credit')->whereIn('sale_id', $monthlyIds)->sum(fn ($a) => $a->amount - $a->paid);
 
-        return view('portal', compact('month', 'monthLabel', 'company', 'customer', 'sales', 'totals', 'accounts'));
+        return view('portal', compact('debtMonth', 'debtTotal', 'fiadoMonth', 'month', 'monthLabel', 'company', 'customer', 'sales', 'totals', 'accounts'));
     }
 
     public function logout(Request $r)

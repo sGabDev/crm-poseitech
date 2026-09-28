@@ -24,6 +24,8 @@ document.querySelectorAll('[data-print]').forEach(button=>button.addEventListene
 document.querySelectorAll('[data-flow-toggle]').forEach(button=>button.addEventListener('click',()=>{const detail=document.getElementById(button.dataset.flowToggle);detail.hidden=!detail.hidden;button.setAttribute('aria-expanded',String(!detail.hidden));}));
 document.querySelectorAll('form[data-confirm]').forEach(form=>form.addEventListener('submit',e=>{if(!confirm(form.dataset.confirm))e.preventDefault();}));
 const saleForm=document.querySelector('#sale-form');
+const flowDirection=document.querySelector('#flow-direction');
+if(flowDirection){flowDirection.addEventListener('change',()=>{const category=document.querySelector('#flow-category');const values=JSON.parse(flowDirection.value==='in'?category.dataset.incoming:category.dataset.outgoing);const previous=category.value;category.replaceChildren();values.forEach(value=>category.add(new Option(value,value)));if(values.includes(previous))category.value=previous;});}
 const depositForm=document.querySelector('#deposit-form');
 const operationType=document.querySelector('#operation-type');
 if(operationType){const toggle=()=>{saleForm.hidden=operationType.value!=='sale';depositForm.hidden=operationType.value!=='deposit';};operationType.addEventListener('change',toggle);toggle();}

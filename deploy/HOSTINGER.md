@@ -80,6 +80,12 @@ Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizad
 Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
 # Atualização: fiado por cliente
 
+## Categorias por direção, indicadores do fiado e comprovantes
+
+Esta atualização não exige migração. Envie todos os arquivos alterados e limpe os caches de views/configuração. As listas de categorias agora são configuradas separadamente para entradas e saídas. Listas personalizadas da versão anterior são preservadas inicialmente nas duas direções; ajuste cada lista em **Configurar categorias da empresa**. Categorias históricas continuam nos filtros mesmo depois de removidas das opções de cadastro.
+
+Os cartões por forma de pagamento mostram também a diferença entre recebido e gasto. O portal permite filtrar as compras pelo mês ou por todo o histórico, por fiado/quitadas/saldo da conta, status e número. Os indicadores mostram o fiado original das compras do mês, o restante dessas compras e o total de fiado em aberto; a seleção da lista não altera esses indicadores. Comprovantes identificam o valor pago com saldo da conta e sua devolução quando a venda é cancelada.
+
 ## Datas retroativas, categorias e portal permanente
 
 Esta atualização não exige migração adicional. Envie os arquivos novos `app/Services/FlowCategories.php` e `app/Services/PortalLink.php`, além dos arquivos alterados, e limpe os caches de rotas, views e configuração.

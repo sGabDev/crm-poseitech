@@ -27,7 +27,9 @@
 <span>Total</span>
 <strong>{{ \App\Services\Tenant::money($sale->total) }}</strong>
 </div>
-<h2>Pagamentos</h2>@foreach($payments as $p)<div class="metric-row">
+<h2>Pagamentos</h2>
+@if($sale->wallet_used>0)<div class="metric-row"><span>Pago com saldo da conta {{ $sale->status==='cancelled' ? ' · Devolvido à conta' : '' }}</span><strong>{{ \App\Services\Tenant::money($sale->wallet_used) }}</strong></div>@endif
+@foreach($payments as $p)<div class="metric-row">
 <span>{{ config('poseitech.payment_labels.'.$p->method) }} {{ $p->reversed_at ? ' · Estornado' : '' }}</span>
 <strong>{{ \App\Services\Tenant::money($p->amount) }}</strong>
 </div>@endforeach<p>Saldo pendente: {{ \App\Services\Tenant::money($sale->status==='cancelled' ? 0 : $sale->total-$sale->paid) }}</p>

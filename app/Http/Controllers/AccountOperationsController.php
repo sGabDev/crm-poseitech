@@ -32,6 +32,8 @@ class AccountOperationsController extends Controller
         $r->validate(['month' => 'nullable|date_format:Y-m', 'export' => 'nullable|in:csv', 'category' => ['nullable', Rule::in($categories->filters())]]);
         $data = $flow->month($r->input('month', now($this->t->company->timezone)->format('Y-m')), $r->input('category'));
         $data['categories'] = $categories->choices();
+        $data['incomingCategories'] = $categories->choices('in');
+        $data['outgoingCategories'] = $categories->choices('out');
         $data['filterCategories'] = $categories->filters();
         if ($r->input('export') === 'csv') {
             return response()->streamDownload(function () use ($data) {
@@ -51,7 +53,7 @@ class AccountOperationsController extends Controller
     public function flowEntry(Request $r)
     {
         $this->t->authorize('cash', true);
-        $d = $r->validate(['amount' => 'required|numeric|min:0.01|max:99999999', 'direction' => 'required|in:in,out', 'method' => 'required|in:'.implode(',', array_keys(config('poseitech.methods'))), 'description' => 'required|string|max:180', 'category' => ['required', 'string', Rule::in(app(FlowCategories::class)->choices())], 'date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:1000-01-01', 'before_or_equal:'.now($this->t->company->timezone)->toDateString()], 'request_key' => 'required|uuid']);
+        $d = $r->validate(['amount' => 'required|numeric|min:0.01|max:99999999', 'direction' => 'required|in:in,out', 'method' => 'required|in:'.implode(',', array_keys(config('poseitech.methods'))), 'description' => 'required|string|max:180', 'category' => ['required', 'string', Rule::in(app(FlowCategories::class)->choices($r->input('direction') === 'in' ? 'in' : 'out'))], 'date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:1000-01-01', 'before_or_equal:'.now($this->t->company->timezone)->toDateString()], 'request_key' => 'required|uuid']);
         $d['occurred_at'] = ! empty($d['date']) ? Carbon::createFromFormat('!Y-m-d', $d['date'], $this->t->company->timezone)->utc() : now();
         DB::transaction(function () use ($d) {
             $this->t->lock();
@@ -69,15 +71,15 @@ class AccountOperationsController extends Controller
     {
         Gate::authorize('manage-company');
         $this->t->authorize('cash', true);
-        $d = $r->validate(['categories' => 'required|string|max:4000']);
+        $d = $r->validate(['categories' => 'required|string|max:4000', 'direction' => 'required|in:in,out']);
         $names = collect(preg_split('/\R/u', $d['categories']))->map(fn ($name) => trim($name))->filter()->unique()->values();
         if ($names->isEmpty() || $names->count() > 50 || $names->contains(fn ($name) => mb_strlen($name) > 60)) {
             throw ValidationException::withMessages(['categories' => 'Informe de 1 a 50 categorias, com até 60 caracteres cada.']);
         }
-        DB::transaction(function () use ($names) {
+        DB::transaction(function () use ($names, $d) {
             $this->t->lock();
             $company = $this->t->company->fresh();
-            $company->update(['settings' => array_merge($company->settings ?? [], ['flow_categories' => $names->all()])]);
+            $company->update(['settings' => array_merge($company->settings ?? [], ['flow_categories_'.$d['direction'] => $names->all()])]);
             $this->t->audit('flow.categories_updated', 'companies', $company->id);
         });
 
