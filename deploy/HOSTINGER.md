@@ -80,6 +80,10 @@ Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizad
 Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
 # Atualização: fiado por cliente
 
+Se Produtos ou Equipe exibirem `Unknown column 'deleted_at'` ou `Unknown column 'must_change_password'`, envie também o arquivo `database/migrations/2026_09_28_000002_password_and_product_deletion.php` antes de executar os comandos abaixo. Esses erros indicam banco sem a migração correspondente. A migração aceita uma execução anterior parcialmente concluída, sem recriar colunas existentes. Confirme com `php artisan migrate:status`, usando o mesmo executável PHP 8.3 abaixo. Não use `migrate:fresh` em produção.
+
+Envie também `public/assets/app.js`, `public/assets/app.css` e as views atualizadas. O layout inclui uma versão nos endereços desses arquivos para que o navegador carregue a busca e a máscara novas.
+
 As atualizações seguintes também incluem exclusão de produtos preservando o histórico e troca obrigatória de senha. Após aplicar as migrações, todas as contas existentes deverão escolher uma nova senha no próximo acesso. Novos usuários e usuários cuja senha seja redefinida pela administração também deverão alterá-la. A recuperação por e-mail já permite definir a senha pessoal. Somente o suporte da plataforma pode alterar módulos, entrando na empresa pelo acesso de suporte. Administradores e funcionários podem trocar a própria senha em Configurações.
 
 Depois de enviar os arquivos atualizados, execute na pasta que contém `artisan`:

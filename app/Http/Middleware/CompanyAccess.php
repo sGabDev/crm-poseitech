@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Services\Tenant;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class CompanyAccess
 {
@@ -22,6 +23,10 @@ class CompanyAccess
         app(Tenant::class)->company = $company;
         view()->share('company', $company);
         view()->share('tenant', app(Tenant::class));
+
+        if (! Schema::hasColumn('products', 'deleted_at') || ! Schema::hasColumn('users', 'must_change_password')) {
+            return response()->view('deployment-pending', ['public' => true], 503);
+        }
 
         return $next($request);
     }

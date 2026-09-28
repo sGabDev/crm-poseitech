@@ -14,7 +14,9 @@
             <div>
                 <section class="card">
                     <h2>Cliente e itens</h2>
-                    <label>Cliente<select name="customer_id" data-search-select="Nome, telefone ou CPF">
+                    <label>Cliente
+                        <div class="search-picker"><input type="search" class="search-input" placeholder="Digite nome, telefone ou CPF" autocomplete="off" aria-label="Nome, telefone ou CPF"><div class="search-results" hidden></div></div>
+                        <select name="customer_id" data-search-select="Nome, telefone ou CPF" hidden>
                             <option value="">Consumidor não identificado</option>@foreach($customers as $c)
                                 <option data-search="{{ $c->name }} {{ $c->phone }} {{ $c->document }}" value="{{ $c->id }}" @selected(old('customer_id') == $c->id)>{{ $c->name }}
                             {{ $c->phone ? ' · ' . $c->phone : '' }}</option>@endforeach
@@ -22,8 +24,9 @@
                     </label>
                     <div id="sale-items">@foreach(old('items', [['product_id' => '', 'quantity' => 1]]) as $index => $line)
                         <div class="sale-line">
-                            <label>Produto ou serviço<select name="items[{{ $index }}][product_id]" class="product-select" data-search-select="Nome do produto ou serviço"
-                                    required>
+                            <label>Produto ou serviço
+                                <div class="search-picker"><input type="search" class="search-input" placeholder="Digite o nome do produto ou serviço" autocomplete="off" aria-label="Nome do produto ou serviço" required><div class="search-results" hidden></div></div>
+                                <select name="items[{{ $index }}][product_id]" class="product-select" data-search-select="Nome do produto ou serviço" hidden>
                                     <option value="">Selecione...</option>@foreach($products as $p)
                                         <option value="{{ $p->id }}" data-price="{{ $p->price }}"
                                             data-addons="{{ $p->addons ?? '[]' }}" @selected($line['product_id'] == $p->id)>

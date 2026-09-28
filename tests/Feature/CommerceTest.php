@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -43,6 +44,25 @@ class CommerceTest extends TestCase
     {
         return array_replace(['request_key' => (string) Str::uuid(), 'customer_id' => $this->customer, 'items' => [['product_id' => $this->product, 'quantity' => 2]], 'discount' => '0', 'extra' => '0',
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
+    }
+
+    public function test_team_creation_and_product_page_work_after_upgrade(): void
+    {
+        $this->post('/staff', ['name' => 'Equipe', 'email' => 'equipe@example.test', 'password' => 'SenhaInicial123', 'role' => 'staff', 'active' => 1, 'permissions' => ['products.read']])->assertSessionHasNoErrors()->assertRedirect();
+        $this->assertDatabaseHas('users', ['email' => 'equipe@example.test', 'company_id' => $this->company->id, 'must_change_password' => true]);
+        $this->get('/records/products')->assertOk()->assertSee('Produto A');
+        $this->get('/sales/new')->assertOk()->assertSee('class="search-input"', false)->assertSee('Digite nome, telefone ou CPF')->assertSee('Digite o nome do produto ou serviço');
+        $this->get('/settings')->assertOk()->assertSee('Módulos da empresa')->assertDontSee('Salvar módulos');
+        $this->post('/settings', ['section' => 'modules', 'modules' => []])->assertForbidden();
+    }
+
+    public function test_missing_upgrade_columns_show_actionable_notice_instead_of_server_error(): void
+    {
+        Schema::table('products', fn ($table) => $table->dropColumn('deleted_at'));
+        $this->get('/records/products')->assertStatus(503)->assertSee('Atualização do banco pendente');
+        $migration = require database_path('migrations/2026_09_28_000002_password_and_product_deletion.php');
+        $migration->up();
+        $this->get('/records/products')->assertOk();
     }
 
     public function test_password_change_is_mandatory_and_validates_current_password(): void
@@ -182,7 +202,7 @@ class CommerceTest extends TestCase
         $this->actingAs($staff)->get('/records/customers')->assertOk();
         $this->post('/records/customers', ['name' => 'Proibido'])->assertForbidden();
         $this->get('/sales')->assertForbidden();
-        $this->get('/settings')->assertOk()->assertSee('Minha senha')->assertDontSee('Módulos da empresa');
+        $this->get('/settings')->assertOk()->assertSee('Minha senha')->assertSee('Módulos da empresa')->assertDontSee('Salvar módulos');
         $this->get('/admin')->assertForbidden();
         $this->company->update(['modules' => config('poseitech.defaults')]);
         $this->actingAs($this->owner)->get('/orders')->assertForbidden();
