@@ -32,9 +32,9 @@
 <small>Frequência média: {{ $stats->count>1 ? round(\Carbon\Carbon::parse($stats->first)->diffInDays(\Carbon\Carbon::parse($stats->last))/($stats->count-1)).' dias' : 'sem base suficiente' }}</small>
 </div>
 </div>
-@if(session('portal_link'))<div class="notice success">Link válido por 30 dias: <a href="{{ session('portal_link') }}" target="_blank">{{ session('portal_link') }}</a>
-<p>Compartilhe este link somente com o titular. Ele dá acesso ao histórico do cliente.</p>
-</div>@endif
+@if($company->enabled('portal') && ($portalUrl = \App\Services\PortalLink::url($customer)))
+<section class="card"><h2>Link permanente do portal</h2><a href="{{ $portalUrl }}" target="_blank" rel="noopener">{{ $portalUrl }}</a><p class="muted">Compartilhe somente com o cliente. O link permanece ativo até ser revogado.</p></section>
+@endif
 <div class="grid">
 <section class="card">
 <h2>Dados e relacionamento</h2><p>Vencimento mensal: dia {{ $customer->due_day }}.</p>@foreach(['document'=>'CPF/CNPJ','address'=>'Endereço','district'=>'Bairro','city'=>'Cidade','birthday'=>'Nascimento','tags'=>'Tags','source'=>'Origem','notes'=>'Observações'] as $k=>$v)<dl class="list-detail">

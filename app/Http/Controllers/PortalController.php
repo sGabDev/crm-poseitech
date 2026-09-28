@@ -3,8 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Company;
-use App\Services\Analytics;
+use App\Services\PortalLink;
 use App\Services\Tenant;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -25,17 +26,24 @@ class PortalController extends Controller
 
             return back()->with('success', 'Link revogado.');
         }
-        $token = Str::random(64);
-        $this->t->update('customers', $id, ['portal_hash' => hash('sha256', $token), 'portal_expires_at' => now()->addDays(30)]);
+        if (! $c->portal_hash) {
+            $this->t->update('customers', $id, ['portal_hash' => hash('sha256', Str::random(64)), 'portal_expires_at' => null]);
+            $c = $this->t->find('customers', $id);
+        }
         $this->t->audit('portal.issued', 'customers', $id);
 
-        return back()->with('portal_link', url('/portal/access/'.$token));
+        return back()->with('portal_link', PortalLink::url($c));
     }
 
     public function access(Request $r, string $token)
     {
-        $c = DB::table('customers')->where('portal_hash', hash('sha256', $token))->where('portal_expires_at', '>', now())->whereNull('anonymized_at')->first();
-        abort_unless($c, 404, 'Link inválido ou expirado.');
+        if (preg_match('/^p\.(\d+)\.([a-f0-9]{64})$/D', $token, $parts)) {
+            $c = DB::table('customers')->where('id', $parts[1])->whereNotNull('portal_hash')->whereNull('anonymized_at')->first();
+            abort_unless($c && hash_equals(PortalLink::token($c), $token), 404, 'Link inválido ou revogado.');
+        } else {
+            $c = DB::table('customers')->where('portal_hash', hash('sha256', $token))->whereNull('anonymized_at')->first();
+        }
+        abort_unless($c, 404, 'Link inválido ou revogado.');
         $company = Company::with('plan')->findOrFail($c->company_id);
         abort_unless($company->available() && $company->enabled('portal'), 404);
         $r->session()->put('portal', ['id' => $c->id, 'company' => $c->company_id, 'hash' => $c->portal_hash]);
@@ -51,27 +59,17 @@ class PortalController extends Controller
         $company = Company::with('plan')->findOrFail($access['company']);
         abort_unless($company->available() && $company->enabled('portal'), 404);
         $this->t->company = $company;
-        $customer = $this->t->query('customers')->where('id', $access['id'])->where('portal_hash', $access['hash'])->where('portal_expires_at', '>', now())->firstOrFail();
-        $period = app(Analytics::class)->period($r);
-        $q = $this->t->query('sales')->where('customer_id', $customer->id)->whereBetween('created_at', $period);
-        if ($r->input('method') === 'fiado') {
-            $q->whereIn('id', $this->t->query('accounts')->where('origin', 'credit')->select('sale_id'));
-        } elseif ($r->filled('method')) {
-            $q->whereIn('id', $this->t->query('payments')->where('method', $r->input('method'))->whereNull('reversed_at')->select('sale_id'));
-        }
+        $customer = $this->t->query('customers')->where('id', $access['id'])->where('portal_hash', $access['hash'])->whereNull('anonymized_at')->firstOrFail();
+        $r->validate(['month' => 'nullable|date_format:Y-m']);
+        $month = $r->input('month', now($company->timezone)->format('Y-m'));
+        $start = Carbon::createFromFormat('!Y-m', $month, $company->timezone)->startOfMonth();
+        $monthLabel = $start->copy()->locale('pt_BR')->translatedFormat('F \\d\\e Y');
+        $q = $this->t->query('sales')->where('customer_id', $customer->id)->where('created_at', '>=', $start->copy()->utc())->where('created_at', '<', $start->copy()->addMonth()->utc());
         $totals = (clone $q)->where('status', 'completed')->selectRaw('COALESCE(SUM(total),0) as total, COALESCE(SUM(paid),0) as paid')->first();
         $sales = $q->orderByDesc('id')->paginate(15)->withQueryString();
-        $items = $this->t->query('sale_items')->whereIn('sale_id', $sales->pluck('id'))->get()->groupBy('sale_id');
-        $accounts = $this->t->query('accounts')->where('customer_id', $customer->id)->where('type', 'receivable')->where('status', '!=', 'cancelled')->orderBy('due_date')->get();
-        $payments = $this->t->query('payments')->where('customer_id', $customer->id)->where('direction', 'in')->whereNull('reversed_at')->orderBy('created_at')->get();
-        $ledger = $this->t->query('sales')->where('customer_id', $customer->id)->where('status', 'completed')->get()->map(fn ($s) => (object) ['date' => $s->created_at, 'label' => 'Compra #'.$s->id, 'amount' => $s->total])->concat($payments->map(fn ($p) => (object) ['date' => $p->created_at, 'label' => 'Pagamento '.config('poseitech.methods.'.$p->method), 'amount' => -$p->amount]))->sortBy('date');
-        $ledger = $ledger->concat($accounts->whereNull('sale_id')->map(fn ($a) => (object) ['date' => $a->created_at, 'label' => $a->description, 'amount' => $a->amount]))->sortBy('date');
-        $points = $this->t->query('loyalty_transactions')->where('customer_id', $customer->id)->sum('points');
-        $credits = $this->t->query('customer_credits')->where('customer_id', $customer->id)->orderByDesc('id')->get();
+        $accounts = $this->t->query('accounts')->where('customer_id', $customer->id)->where('type', 'receivable')->where('status', 'pending')->whereColumn('amount', '>', 'paid')->orderBy('due_date')->get();
 
-        $walletEntries = $this->t->query('wallet_entries')->where('customer_id', $customer->id)->orderByDesc('id')->get();
-
-        return view('portal', compact('walletEntries', 'company', 'customer', 'sales', 'totals', 'items', 'accounts', 'payments', 'ledger', 'points', 'credits'));
+        return view('portal', compact('month', 'monthLabel', 'company', 'customer', 'sales', 'totals', 'accounts'));
     }
 
     public function logout(Request $r)

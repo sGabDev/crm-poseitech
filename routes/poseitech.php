@@ -42,6 +42,7 @@ Route::middleware(['auth', 'can:platform'])->group(function () {
 Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/customer-deposits', [AccountOperationsController::class, 'deposit']);
     Route::get('/cash-flow', [AccountOperationsController::class, 'flow']);
+    Route::post('/cash-flow/categories', [AccountOperationsController::class, 'categories']);
     Route::post('/cash-flow', [AccountOperationsController::class, 'flowEntry']);
     Route::post('/staff/{id}/action', [SettingsController::class, 'staffAction'])->whereNumber('id');
     Route::post('/settings/mail', [SettingsController::class, 'mailAction']);

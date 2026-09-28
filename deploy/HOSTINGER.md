@@ -80,6 +80,16 @@ Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizad
 Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
 # Atualização: fiado por cliente
 
+## Datas retroativas, categorias e portal permanente
+
+Esta atualização não exige migração adicional. Envie os arquivos novos `app/Services/FlowCategories.php` e `app/Services/PortalLink.php`, além dos arquivos alterados, e limpe os caches de rotas, views e configuração.
+
+O fluxo permite escolher hoje ou uma data anterior, no fuso da empresa. O lançamento entra no mês selecionado e conserva a data real de cadastro para auditoria. Categorias são configuradas por administradores em **Fluxo de caixa → Configurar categorias da empresa**. Categorias retiradas da lista deixam de aceitar novos lançamentos, mas permanecem no filtro do histórico. Os cartões por forma de pagamento e os saldos respeitam o mês e a categoria selecionados.
+
+Os links do portal não expiram, aparecem no perfil e podem ser revogados. Links antigos continuam funcionando, inclusive quando a antiga data de validade já passou. O link exibido no perfil usa uma assinatura segura baseada na chave da aplicação e no acesso atual do cliente; preservar a `APP_KEY` mantém esses links válidos. Revogar invalida tanto o link exibido como o link antigo e encerra o acesso das sessões do portal. Gerar novamente depois de revogar cria um novo acesso.
+
+O portal mostra uma tabela de compras por mês, com número, valor e comprovante. Somente contas ainda em aberto aparecem em **Valores pendentes**, incluindo dívidas de meses anteriores. Créditos, cashback, saldo e extrato não são exibidos no portal; os registros permanecem preservados no sistema.
+
 ## SMTP Gmail, extrato agrupado e caixa obrigatório
 
 Envie também `public/assets/layout-fixes.css`, `app/Services/CompanySmtp.php` e `resources/views/components/flow-statement.blade.php`, junto com os demais arquivos alterados. Limpe as views e configurações após atualizar. Esta etapa não cria novas tabelas.

@@ -55,6 +55,75 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_backdated_flow_categories_filters_and_payment_totals(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-28 15:00:00', 'America/Sao_Paulo'));
+        $this->post('/cash-flow/categories', ['categories' => "Taxas\nInvestimentos"])->assertSessionHasNoErrors();
+        $data = ['direction' => 'out', 'amount' => '15', 'method' => 'pix', 'category' => 'Taxas', 'description' => 'Taxa antiga', 'date' => '2026-08-10', 'request_key' => (string) Str::uuid()];
+        $this->post('/cash-flow', $data)->assertSessionHasNoErrors()->assertRedirect('/cash-flow?month=2026-08');
+        $entry = DB::table('flow_entries')->first();
+        $this->assertSame('2026-08-10 03:00:00', $entry->occurred_at);
+        $this->assertStringStartsWith('2026-09-28', $entry->created_at);
+        $august = app(CashFlow::class)->month('2026-08', 'Taxas');
+        $this->assertSame(1500, $august['outgoing']);
+        $this->assertSame(1500, $august['methodTotals']['pix']['out']);
+        $this->assertSame(-1500, app(CashFlow::class)->month('2026-09', 'Taxas')['opening']);
+        $this->assertSame(0, app(CashFlow::class)->month('2026-08', 'Investimentos')['outgoing']);
+        $this->get('/cash-flow?month=2026-08&category=Taxas')->assertOk()->assertSee('Taxa antiga')->assertSee('Recebido')->assertSee('Gasto');
+        $this->post('/cash-flow/categories', ['categories' => 'Investimentos'])->assertSessionHasNoErrors();
+        $this->get('/cash-flow?month=2026-08&category=Taxas')->assertOk()->assertSee('Taxa antiga');
+        $this->get('/cash-flow')->assertOk()->assertSee('value="2026-09-28"', false);
+        $this->post('/cash-flow', array_replace($data, ['request_key' => (string) Str::uuid()]))->assertSessionHasErrors('category');
+        $this->post('/cash-flow', array_replace($data, ['category' => 'Investimentos', 'date' => '2026-09-29', 'request_key' => (string) Str::uuid()]))->assertSessionHasErrors('date');
+        $this->travelBack();
+    }
+
+    public function test_permanent_portal_link_is_stable_visible_and_revocable(): void
+    {
+        $this->post('/customers/'.$this->customer.'/portal')->assertRedirect();
+        $link = session('portal_link');
+        $this->post('/customers/'.$this->customer.'/portal')->assertRedirect();
+        $this->assertSame($link, session('portal_link'));
+        $this->get('/customers/'.$this->customer)->assertOk()->assertSee($link, false);
+        $this->travel(400)->days();
+        $this->get($link)->assertRedirect('/portal');
+        $this->get('/portal')->assertOk();
+        $token = basename($link);
+        $tampered = substr($token, 0, -1).(str_ends_with($token, 'a') ? 'b' : 'a');
+        $this->get('/portal/access/'.$tampered)->assertNotFound();
+        $this->post('/customers/'.$this->customer.'/portal', ['action' => 'revoke'])->assertRedirect();
+        $this->get($link)->assertNotFound();
+        $this->get('/portal')->assertNotFound();
+        $this->post('/customers/'.$this->customer.'/portal')->assertRedirect();
+        $this->assertNotSame($link, session('portal_link'));
+        $this->travelBack();
+    }
+
+    public function test_legacy_portal_links_remain_valid_without_expiration(): void
+    {
+        $token = Str::random(64);
+        DB::table('customers')->where('id', $this->customer)->update(['portal_hash' => hash('sha256', $token), 'portal_expires_at' => now()->subDay()]);
+        $this->get('/portal/access/'.$token)->assertRedirect('/portal');
+        $this->get('/customers/'.$this->customer)->assertOk()->assertSee('Link permanente do portal');
+    }
+
+    public function test_portal_month_filter_and_paid_accounts_are_hidden(): void
+    {
+        $this->travelTo(Carbon::parse('2026-08-31 23:30:00', 'America/Sao_Paulo'));
+        $this->post('/sales', $this->sale(['auto_payment' => 1]))->assertSessionHasNoErrors();
+        $old = DB::table('sales')->first();
+        $this->travelTo(Carbon::parse('2026-09-01 00:30:00', 'America/Sao_Paulo'));
+        $this->post('/sales', $this->sale())->assertSessionHasNoErrors();
+        $new = DB::table('sales')->orderByDesc('id')->first();
+        $this->post('/customers/'.$this->customer.'/debt-payment', ['request_key' => (string) Str::uuid(), 'amount' => '150', 'method' => 'pix'])->assertSessionHasNoErrors();
+        $this->post('/customers/'.$this->customer.'/portal')->assertRedirect();
+        $this->get(session('portal_link'))->assertRedirect('/portal');
+        $this->get('/portal?month=2026-09')->assertOk()->assertSee($new->receipt_hash)->assertDontSee($old->receipt_hash)->assertDontSee('Valores pendentes')->assertDontSee('Créditos e cashback')->assertDontSee('Saldo da conta')->assertDontSee('Extrato da conta')->assertDontSee('Produto A');
+        $this->get('/portal?month=2026-08')->assertOk()->assertSee($old->receipt_hash)->assertDontSee($new->receipt_hash);
+        $this->get('/portal?month=inválido')->assertSessionHasErrors('month');
+        $this->travelBack();
+    }
+
     public function test_every_sale_requires_an_open_register_even_wallet_or_fiado(): void
     {
         app(Tenant::class)->insert('wallet_entries', ['customer_id' => $this->customer, 'user_id' => $this->owner->id, 'amount' => 50000, 'description' => 'Saldo inicial']);
@@ -452,9 +521,9 @@ class CommerceTest extends TestCase
         $link = session('portal_link');
         $response->assertRedirect();
         $token = basename($link);
-        $this->assertDatabaseHas('customers', ['portal_hash' => hash('sha256', $token)]);
+        $this->assertNotSame($token, DB::table('customers')->where('id', $this->customer)->value('portal_hash'));
         $this->get('/portal/access/'.$token)->assertRedirect('/portal');
-        $this->get('/portal')->assertOk()->assertSee('Cliente A')->assertSee('Produto A');
+        $this->get('/portal')->assertOk()->assertSee('Cliente A')->assertSee('Ver comprovante')->assertDontSee('Produto A');
         $this->post('/customers/'.$this->customer.'/portal', ['action' => 'revoke'])->assertRedirect();
         $this->get('/portal')->assertNotFound();
         $this->get('/portal/access/'.$token)->assertNotFound();
