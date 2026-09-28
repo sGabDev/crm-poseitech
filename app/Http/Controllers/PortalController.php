@@ -60,7 +60,7 @@ class PortalController extends Controller
         abort_unless($company->available() && $company->enabled('portal'), 404);
         $this->t->company = $company;
         $customer = $this->t->query('customers')->where('id', $access['id'])->where('portal_hash', $access['hash'])->whereNull('anonymized_at')->firstOrFail();
-        $r->validate(['month' => 'nullable|date_format:Y-m', 'scope' => 'nullable|in:month,all', 'kind' => 'nullable|in:all,fiado,paid,wallet', 'status' => 'nullable|in:all,completed,cancelled', 'purchase' => 'nullable|integer|min:1']);
+        $r->validate(['month' => 'nullable|date_format:Y-m', 'kind' => 'nullable|in:all,fiado,paid,wallet', 'status' => 'nullable|in:all,completed,cancelled', 'purchase' => 'nullable|integer|min:1']);
         $month = $r->input('month', now($company->timezone)->format('Y-m'));
         $start = Carbon::createFromFormat('!Y-m', $month, $company->timezone)->startOfMonth();
         $monthLabel = $start->copy()->locale('pt_BR')->translatedFormat('F \\d\\e Y');
@@ -68,9 +68,6 @@ class PortalController extends Controller
         $totals = (clone $q)->where('status', 'completed')->selectRaw('COALESCE(SUM(total),0) as total, COALESCE(SUM(paid),0) as paid')->first();
         $monthlyIds = (clone $q)->where('status', 'completed')->pluck('id');
         $fiadoMonth = (clone $q)->where('status', 'completed')->sum('fiado_amount');
-        if ($r->input('scope') === 'all') {
-            $q = $this->t->query('sales')->where('customer_id', $customer->id);
-        }
         if ($r->input('kind') === 'fiado') {
             $q->where('fiado_amount', '>', 0);
         }

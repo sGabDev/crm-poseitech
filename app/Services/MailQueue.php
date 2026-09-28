@@ -29,7 +29,14 @@ class MailQueue
         try {
             $smtp = $company->smtp;
             $mailer = Mail::build(CompanySmtp::config($smtp));
-            $mailer->send('emails.message', ['body' => $email->body, 'companyName' => $company->name], function ($m) use ($email, $smtp) {
+            $view = 'emails.message';
+            $data = ['body' => $email->body, 'companyName' => $company->name];
+            if ($email->sale_id) {
+                $sale = DB::table('sales')->where('company_id', $company->id)->where('id', $email->sale_id)->firstOrFail();
+                $data = ['sale' => $sale, 'company' => $company, 'customer' => $customer, 'items' => DB::table('sale_items')->where('company_id', $company->id)->where('sale_id', $sale->id)->get(), 'payments' => DB::table('payments')->where('company_id', $company->id)->where('sale_id', $sale->id)->get()];
+                $view = ['html' => 'emails.receipt', 'text' => 'emails.receipt-text'];
+            }
+            $mailer->send($view, $data, function ($m) use ($email, $smtp) {
                 $m->to($email->recipient)->from($smtp['from'], $smtp['from_name'] ?? '')->subject($email->subject);
             });
             $query->update(['status' => 'sent', 'error' => null, 'sent_at' => now(), 'updated_at' => now()]);

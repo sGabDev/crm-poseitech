@@ -55,10 +55,53 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_category_lists_save_together_and_invalid_list_does_not_partially_save(): void
+    {
+        $this->post('/cash-flow/categories', ['categories_in' => "Aporte\nReembolso", 'categories_out' => "Aluguel\nImpostos"])->assertSessionHasNoErrors();
+        $settings = $this->company->fresh()->settings;
+        $this->assertSame(['Aporte', 'Reembolso'], $settings['flow_categories_in']);
+        $this->assertSame(['Aluguel', 'Impostos'], $settings['flow_categories_out']);
+        $this->post('/cash-flow/categories', ['categories_in' => 'Outra', 'categories_out' => str_repeat('a', 61)])->assertSessionHasErrors('categories_out');
+        $this->assertSame($settings, $this->company->fresh()->settings);
+        $this->get('/cash-flow')->assertOk()->assertSee('Salvar todas as categorias');
+    }
+
+    public function test_sale_automatically_queues_one_receipt_and_renders_html_and_text(): void
+    {
+        $d = $this->sale();
+        $this->post('/sales', $d)->assertSessionHasNoErrors();
+        $this->post('/sales', $d)->assertSessionHasNoErrors();
+        $sale = DB::table('sales')->first();
+        $this->assertSame(1, DB::table('email_logs')->where('sale_id', $sale->id)->count());
+        $email = DB::table('email_logs')->where('sale_id', $sale->id)->first();
+        $this->assertSame('pending', $email->status);
+        $this->assertSame('cliente@example.test', $email->recipient);
+        $this->company->update(['smtp' => ['host' => 'smtp.gmail.com', 'port' => 587, 'encryption' => 'tls', 'from' => 'user@gmail.com', 'from_name' => 'Loja']]);
+        $mailer = new Mailer('test', app('view'), new ArrayTransport, app('events'));
+        Mail::shouldReceive('build')->once()->andReturn($mailer);
+        $this->post('/settings/mail', ['action' => 'send', 'id' => $email->id])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('email_logs', ['id' => $email->id, 'status' => 'sent']);
+        $message = $mailer->getSymfonyTransport()->messages()->first()->getOriginalMessage();
+        $this->assertStringContainsString('Produto A', $message->getHtmlBody());
+        $this->assertStringContainsString('Abrir comprovante completo', $message->getHtmlBody());
+        $this->assertStringContainsString('Valor em fiado desta compra', $message->getHtmlBody());
+        $this->assertStringContainsString($sale->receipt_hash, $message->getTextBody());
+        $this->post('/sales/'.$sale->id.'/email')->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::table('email_logs')->where('sale_id', $sale->id)->count());
+    }
+
+    public function test_failed_and_unidentified_sales_do_not_queue_receipts(): void
+    {
+        $this->post('/sales', $this->sale(['items' => [['product_id' => $this->product, 'quantity' => 99]]]))->assertSessionHasErrors();
+        $this->assertSame(0, DB::table('email_logs')->count());
+        $this->post('/sales', $this->sale(['customer_id' => null, 'auto_payment' => 1]))->assertSessionHasNoErrors();
+        $this->assertSame(0, DB::table('email_logs')->count());
+    }
+
     public function test_direction_categories_and_active_cash_flow_menu(): void
     {
-        $this->post('/cash-flow/categories', ['direction' => 'in', 'categories' => 'Investimento'])->assertSessionHasNoErrors();
-        $this->post('/cash-flow/categories', ['direction' => 'out', 'categories' => 'Aluguel'])->assertSessionHasNoErrors();
+        $this->post('/cash-flow/categories', ['categories_in' => 'Investimento', 'categories_out' => 'Aluguel'])->assertSessionHasNoErrors();
+        $this->post('/cash-flow/categories', ['categories_in' => 'Investimento', 'categories_out' => 'Aluguel'])->assertSessionHasNoErrors();
         $data = ['direction' => 'in', 'category' => 'Aluguel', 'amount' => '10', 'method' => 'pix', 'description' => 'Teste', 'request_key' => (string) Str::uuid()];
         $this->post('/cash-flow', $data)->assertSessionHasErrors('category');
         $this->post('/cash-flow', array_replace($data, ['category' => 'Investimento']))->assertSessionHasNoErrors();
@@ -78,8 +121,8 @@ class CommerceTest extends TestCase
         $this->post('/customers/'.$this->customer.'/portal')->assertRedirect();
         $this->get(session('portal_link'))->assertRedirect('/portal');
         $this->get('/portal?month=2026-09&kind=fiado')->assertOk()->assertViewHas('fiadoMonth', 15000)->assertViewHas('debtMonth', 13000)->assertViewHas('debtTotal', 13000)->assertSee($newer->receipt_hash)->assertDontSee($older->receipt_hash);
-        $this->get('/portal?month=2026-09&scope=all&kind=fiado')->assertOk()->assertSee($older->receipt_hash)->assertSee($newer->receipt_hash)->assertSee('Fiado quitado');
-        $this->get('/portal?scope=all&kind=paid')->assertOk()->assertSee($older->receipt_hash)->assertDontSee($newer->receipt_hash);
+        $this->get('/portal?month=2026-09&scope=all&kind=fiado')->assertOk()->assertDontSee($older->receipt_hash)->assertSee($newer->receipt_hash)->assertDontSee('De todos os meses');
+        $this->get('/portal?month=2026-08&kind=paid')->assertOk()->assertSee($older->receipt_hash)->assertDontSee($newer->receipt_hash);
         $this->get('/portal?scope=all&purchase='.$newer->id)->assertOk()->assertDontSee($older->receipt_hash);
         $this->travelBack();
     }
@@ -97,7 +140,7 @@ class CommerceTest extends TestCase
     public function test_backdated_flow_categories_filters_and_payment_totals(): void
     {
         $this->travelTo(Carbon::parse('2026-09-28 15:00:00', 'America/Sao_Paulo'));
-        $this->post('/cash-flow/categories', ['direction' => 'out', 'categories' => "Taxas\nInvestimentos"])->assertSessionHasNoErrors();
+        $this->post('/cash-flow/categories', ['categories_in' => 'Aporte', 'categories_out' => "Taxas\nInvestimentos"])->assertSessionHasNoErrors();
         $data = ['direction' => 'out', 'amount' => '15', 'method' => 'pix', 'category' => 'Taxas', 'description' => 'Taxa antiga', 'date' => '2026-08-10', 'request_key' => (string) Str::uuid()];
         $this->post('/cash-flow', $data)->assertSessionHasNoErrors()->assertRedirect('/cash-flow?month=2026-08');
         $entry = DB::table('flow_entries')->first();
@@ -109,7 +152,7 @@ class CommerceTest extends TestCase
         $this->assertSame(-1500, app(CashFlow::class)->month('2026-09', 'Taxas')['opening']);
         $this->assertSame(0, app(CashFlow::class)->month('2026-08', 'Investimentos')['outgoing']);
         $this->get('/cash-flow?month=2026-08&category=Taxas')->assertOk()->assertSee('Taxa antiga')->assertSee('Recebido')->assertSee('Gasto');
-        $this->post('/cash-flow/categories', ['direction' => 'out', 'categories' => 'Investimentos'])->assertSessionHasNoErrors();
+        $this->post('/cash-flow/categories', ['categories_in' => 'Aporte', 'categories_out' => 'Investimentos'])->assertSessionHasNoErrors();
         $this->get('/cash-flow?month=2026-08&category=Taxas')->assertOk()->assertSee('Taxa antiga');
         $this->get('/cash-flow')->assertOk()->assertSee('value="2026-09-28"', false);
         $this->post('/cash-flow', array_replace($data, ['request_key' => (string) Str::uuid()]))->assertSessionHasErrors('category');

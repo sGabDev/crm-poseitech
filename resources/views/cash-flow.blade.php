@@ -19,7 +19,7 @@
 <label>Descrição<input name="description" maxlength="180" required></label><button>Registrar movimentação</button></form></details>
 @endif
 @can('manage-company')
-<details class="card"><summary>Configurar categorias da empresa</summary><p>Uma categoria por linha. As categorias retiradas da lista continuam no histórico e nos filtros dos lançamentos existentes.</p><div class="grid">@foreach(['in'=>['Entradas',$incomingCategories],'out'=>['Saídas',$outgoingCategories]] as $direction=>$group)<form method="post" action="{{ url('/cash-flow/categories') }}" class="stack">@csrf<input type="hidden" name="direction" value="{{ $direction }}"><label>Categorias de {{ $group[0] }}<textarea name="categories" rows="6" required>{{ old('direction')===$direction?old('categories',implode("\n",$group[1])):implode("\n",$group[1]) }}</textarea></label><button>Salvar categorias de {{ $group[0] }}</button></form>@endforeach</div></details>
+<details class="card"><summary>Configurar categorias da empresa</summary><p>Uma categoria por linha. As categorias retiradas da lista continuam no histórico e nos filtros dos lançamentos existentes.</p><form method="post" action="{{ url('/cash-flow/categories') }}" class="stack">@csrf<div class="grid">@foreach(['in'=>['Entradas',$incomingCategories],'out'=>['Saídas',$outgoingCategories]] as $direction=>$group)<label>Categorias de {{ $group[0] }}<textarea name="categories_{{ $direction }}" rows="6" required>{{ old('categories_'.$direction,implode("\n",$group[1])) }}</textarea></label>@endforeach</div><button>Salvar todas as categorias</button></form></details>
 @endcan
 @include('components.flow-statement')
 @endsection

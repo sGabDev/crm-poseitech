@@ -24,7 +24,7 @@ class CompanyAccess
         view()->share('company', $company);
         view()->share('tenant', app(Tenant::class));
 
-        if (! Schema::hasColumn('products', 'deleted_at') || ! Schema::hasColumn('users', 'must_change_password') || ! Schema::hasColumn('users', 'deleted_at') || ! Schema::hasColumn('sales', 'wallet_used') || ! Schema::hasTable('wallet_entries') || ! Schema::hasTable('customer_deposits') || ! Schema::hasTable('flow_entries')) {
+        if (! Schema::hasColumn('email_logs', 'sale_id') || ! Schema::hasColumn('products', 'deleted_at') || ! Schema::hasColumn('users', 'must_change_password') || ! Schema::hasColumn('users', 'deleted_at') || ! Schema::hasColumn('sales', 'wallet_used') || ! Schema::hasTable('wallet_entries') || ! Schema::hasTable('customer_deposits') || ! Schema::hasTable('flow_entries')) {
             return response()->view('deployment-pending', ['public' => true], 503);
         }
 

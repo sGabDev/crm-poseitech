@@ -66,11 +66,26 @@ class CampaignController extends Controller
         $customer = $this->t->find('customers', $sale->customer_id);
         abort_unless($customer->email && ! $customer->anonymized_at, 422, 'Cliente sem e-mail.');
         abort_unless($this->t->company->smtp, 422, 'Configure o SMTP.');
-        $this->t->insert('email_logs', ['customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Comprovante de compra #'.$id,
-            'body' => 'Olá, '.$customer->name.'. Seu comprovante de '.Tenant::money($sale->total).' está disponível em '.url('/receipt/'.$sale->receipt_hash)]);
+        $status = DB::transaction(function () use ($id, $customer, $sale) {
+            $this->t->lock();
+            $existing = $this->t->query('email_logs')->where('sale_id', $id)->first();
+            if ($existing) {
+                if (in_array($existing->status, ['failed', 'cancelled'])) {
+                    $this->t->query('email_logs')->where('id', $existing->id)->whereIn('status', ['failed', 'cancelled'])->update(['status' => 'pending', 'error' => null, 'updated_at' => now()]);
+
+                    return 'pending';
+                }
+
+                return $existing->status;
+            }
+            $this->t->insert('email_logs', ['sale_id' => $id, 'customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Comprovante de compra #'.$id,
+                'body' => 'Olá, '.$customer->name.'. Seu comprovante de '.Tenant::money($sale->total).' está disponível em '.url('/receipt/'.$sale->receipt_hash)]);
+
+            return 'pending';
+        });
         $this->t->audit('receipt.queued', 'sales', $id);
 
-        return back()->with('success', 'Comprovante colocado na fila.');
+        return back()->with('success', $status === 'sent' ? 'Este comprovante já foi enviado.' : ($status === 'sending' ? 'Este comprovante está sendo enviado.' : 'Comprovante colocado na fila.'));
     }
 
     public function billing(Request $r, int $id)
@@ -97,6 +112,6 @@ class CampaignController extends Controller
             'body' => 'Faturamento: '.Tenant::money($data['totals']->revenue)."\nVendas: ".$data['totals']->count."\nTicket médio: ".Tenant::money($data['ticket'])."\nRecebido: ".Tenant::money($data['incoming'])."\nA receber (total): ".Tenant::money($data['receivable'])]);
         $this->t->audit('report.queued');
 
-        return back()->with('success','Resumo colocado na fila para o seu e-mail.');
+        return back()->with('success', 'Resumo colocado na fila para o seu e-mail.');
     }
 }

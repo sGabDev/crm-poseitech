@@ -161,6 +161,9 @@ class Commerce
                 $this->t->insert('orders', ['sale_id' => $saleId, 'delivery' => ! empty($d['delivery']), 'address' => $d['address'] ?? null, 'fee' => $fee, 'region' => $d['region'] ?? null]);
             }
             $this->t->audit('sale.created', 'sales', $saleId, null, ['total' => $total, 'paid' => $paid]);
+            if ($customer && filter_var($customer->email, FILTER_VALIDATE_EMAIL)) {
+                $this->t->insert('email_logs', ['sale_id' => $saleId, 'customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Comprovante da compra #'.$saleId.' · '.$this->t->company->name, 'body' => 'Olá, '.$customer->name.'. Sua compra #'.$saleId.' foi registrada. Total: '.Tenant::money($total).'.']);
+            }
 
             return $saleId;
         }, 3);

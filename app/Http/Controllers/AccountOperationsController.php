@@ -71,15 +71,19 @@ class AccountOperationsController extends Controller
     {
         Gate::authorize('manage-company');
         $this->t->authorize('cash', true);
-        $d = $r->validate(['categories' => 'required|string|max:4000', 'direction' => 'required|in:in,out']);
-        $names = collect(preg_split('/\R/u', $d['categories']))->map(fn ($name) => trim($name))->filter()->unique()->values();
-        if ($names->isEmpty() || $names->count() > 50 || $names->contains(fn ($name) => mb_strlen($name) > 60)) {
-            throw ValidationException::withMessages(['categories' => 'Informe de 1 a 50 categorias, com até 60 caracteres cada.']);
+        $d = $r->validate(['categories_in' => 'required|string|max:4000', 'categories_out' => 'required|string|max:4000']);
+        $settings = [];
+        foreach (['in', 'out'] as $direction) {
+            $names = collect(preg_split('/\R/u', $d['categories_'.$direction]))->map(fn ($name) => trim($name))->filter()->unique()->values();
+            if ($names->isEmpty() || $names->count() > 50 || $names->contains(fn ($name) => mb_strlen($name) > 60)) {
+                throw ValidationException::withMessages(['categories_'.$direction => 'Informe de 1 a 50 categorias, com até 60 caracteres cada.']);
+            }
+            $settings['flow_categories_'.$direction] = $names->all();
         }
-        DB::transaction(function () use ($names, $d) {
+        DB::transaction(function () use ($settings) {
             $this->t->lock();
             $company = $this->t->company->fresh();
-            $company->update(['settings' => array_merge($company->settings ?? [], ['flow_categories_'.$d['direction'] => $names->all()])]);
+            $company->update(['settings' => array_merge($company->settings ?? [], $settings)]);
             $this->t->audit('flow.categories_updated', 'companies', $company->id);
         });
 

@@ -80,6 +80,16 @@ Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizad
 Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
 # Atualização: fiado por cliente
 
+## Comprovantes automáticos e salvamento conjunto de categorias
+
+Envie a migração `2026_09_28_000004_automatic_sale_receipts.php`, os templates `resources/views/emails/receipt.blade.php` e `receipt-text.blade.php` e os demais arquivos alterados. Execute `migrate --force` com PHP 8.3 e limpe os caches.
+
+Cada venda concluída com cliente que tenha e-mail válido cria um comprovante na fila, mesmo sem consentimento para mensagens promocionais: é uma comunicação sobre a própria compra. A venda e o registro da fila são gravados juntos, e repetir a mesma venda não duplica o e-mail. Vendas sem cliente ou sem e-mail continuam funcionando, sem envio. Falhas de SMTP não desfazem a venda; use a fila para tentar novamente.
+
+O envio automático é realizado pelo cron existente (`schedule:run` a cada minuto, que executa `poseitech:mail`). Configure e teste o SMTP de cada empresa. Sem cron, as mensagens ficam pendentes até processamento manual. O HTML contém itens, valores, pagamentos, fiado e links para o comprovante e, quando disponível, o portal. Também existe uma versão em texto simples.
+
+O portal permanece limitado ao mês selecionado, mesmo que uma URL antiga contenha `scope=all`. As duas listas de categorias são salvas juntas pelo botão **Salvar todas as categorias**; um erro em qualquer lista impede alterações parciais.
+
 ## Categorias por direção, indicadores do fiado e comprovantes
 
 Esta atualização não exige migração. Envie todos os arquivos alterados e limpe os caches de views/configuração. As listas de categorias agora são configuradas separadamente para entradas e saídas. Listas personalizadas da versão anterior são preservadas inicialmente nas duas direções; ajuste cada lista em **Configurar categorias da empresa**. Categorias históricas continuam nos filtros mesmo depois de removidas das opções de cadastro.
