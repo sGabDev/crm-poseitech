@@ -21,6 +21,7 @@ document.querySelectorAll('[data-phone]').forEach(input=>{
 });
 document.querySelector('.menu-toggle')?.addEventListener('click', e => { const open=document.querySelector('#sidebar').classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open)); });
 document.querySelectorAll('[data-print]').forEach(button=>button.addEventListener('click',()=>window.print()));
+document.querySelectorAll('[data-flow-toggle]').forEach(button=>button.addEventListener('click',()=>{const detail=document.getElementById(button.dataset.flowToggle);detail.hidden=!detail.hidden;button.setAttribute('aria-expanded',String(!detail.hidden));}));
 document.querySelectorAll('form[data-confirm]').forEach(form=>form.addEventListener('submit',e=>{if(!confirm(form.dataset.confirm))e.preventDefault();}));
 const saleForm=document.querySelector('#sale-form');
 const depositForm=document.querySelector('#deposit-form');

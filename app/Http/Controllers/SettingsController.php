@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\CompanySmtp;
 use App\Services\MailQueue;
 use App\Services\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -55,6 +57,9 @@ class SettingsController extends Controller
             if (in_array('sales', $modules) && ! in_array('products', $modules)) {
                 $modules[] = 'products';
             }
+            if (in_array('sales', $modules) && ! in_array('cash', $modules)) {
+                $modules[] = 'cash';
+            }
             if (! in_array('cash', $modules) && $this->t->query('cash_registers')->whereNull('closed_at')->exists()) {
                 throw ValidationException::withMessages(['modules' => 'Feche o caixa antes de desativar o módulo.']);
             }
@@ -64,6 +69,15 @@ class SettingsController extends Controller
             if (empty($d['password'])) {
                 $d['password'] = $company->smtp['password'] ?? null;
             }
+            try {
+                $connection = CompanySmtp::config($d);
+            } catch (\InvalidArgumentException $e) {
+                throw ValidationException::withMessages(['host' => 'Confira o servidor SMTP, a porta e o e-mail remetente.']);
+            }
+            $d['host'] = $connection['host'];
+            $d['password'] = $connection['password'];
+            $d['username'] = $connection['username'];
+            $d['encryption'] = $connection['scheme'] === 'smtps' ? 'ssl' : 'tls';
             $company->update(['smtp' => $d]);
         } elseif ($section === 'loyalty') {
             $d = $r->validate(['loyalty_mode' => 'required|in:points,purchases,cashback', 'loyalty_rate' => 'required|numeric|min:0|max:100', 'birthday_automation' => 'nullable|boolean']);
@@ -132,7 +146,7 @@ class SettingsController extends Controller
     public function mailAction(Request $r, MailQueue $queue)
     {
         Gate::authorize('manage-company');
-        $d = $r->validate(['action' => 'required|in:clear,retry,send,process', 'id' => 'nullable|integer']);
+        $d = $r->validate(['action' => 'required|in:clear,retry,send,process,test', 'id' => 'nullable|integer']);
         if ($d['action'] === 'clear') {
             $count = $this->t->query('email_logs')->whereIn('status', ['pending', 'failed'])->update(['status' => 'cancelled', 'updated_at' => now()]);
             $this->t->audit('mail.cleared', 'email_logs', null, null, ['count' => $count]);
@@ -141,6 +155,17 @@ class SettingsController extends Controller
         }
         if (! $this->t->company->smtp) {
             throw ValidationException::withMessages(['smtp' => 'Configure o SMTP antes de enviar.']);
+        }
+        if ($d['action'] === 'test') {
+            try {
+                $transport = Mail::build(CompanySmtp::config($this->t->company->smtp))->getSymfonyTransport();
+                $transport->start();
+                $transport->stop();
+            } catch (\Throwable $e) {
+                throw ValidationException::withMessages(['smtp' => CompanySmtp::failure($e)]);
+            }
+
+            return back()->with('success', 'Conexão segura e autenticação SMTP confirmadas. Nenhum e-mail foi enviado neste teste.');
         }
         if ($d['action'] === 'retry') {
             $this->t->query('email_logs')->where('status', 'failed')->update(['status' => 'pending', 'error' => null, 'updated_at' => now()]);

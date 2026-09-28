@@ -57,7 +57,7 @@ class BusinessController extends Controller
     {
         $this->t->authorize('sales', true);
 
-        return view('sale-form', ['wallets' => $this->t->query('wallet_entries')->selectRaw('customer_id, SUM(amount) as balance')->groupBy('customer_id')->pluck('balance', 'customer_id'), 'debts' => $this->t->query('accounts')->where('origin', 'credit')->where('status', 'pending')->selectRaw('customer_id, SUM(amount-paid) as balance')->groupBy('customer_id')->pluck('balance', 'customer_id'), 'customers' => $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->get(), 'products' => $this->t->query('products')->where('active', true)->orderBy('name')->get()]);
+        return view('sale-form', ['registerOpen' => $this->t->query('cash_registers')->whereNull('closed_at')->exists(), 'wallets' => $this->t->query('wallet_entries')->selectRaw('customer_id, SUM(amount) as balance')->groupBy('customer_id')->pluck('balance', 'customer_id'), 'debts' => $this->t->query('accounts')->where('origin', 'credit')->where('status', 'pending')->selectRaw('customer_id, SUM(amount-paid) as balance')->groupBy('customer_id')->pluck('balance', 'customer_id'), 'customers' => $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->get(), 'products' => $this->t->query('products')->where('active', true)->orderBy('name')->get()]);
     }
 
     public function sell(Request $r)

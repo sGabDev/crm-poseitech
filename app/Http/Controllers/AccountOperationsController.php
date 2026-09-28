@@ -30,9 +30,9 @@ class AccountOperationsController extends Controller
             return response()->streamDownload(function () use ($data) {
                 $out = fopen('php://output', 'w');
                 fwrite($out, "\xEF\xBB\xBF");
-                fputcsv($out, ['Data', 'Origem', 'Descrição', 'Forma', 'Entrada', 'Saída', 'Saldo'], ';', '"', '');
-                foreach ($data['entries'] as $e) {
-                    fputcsv($out, [Carbon::parse($e['date'])->timezone($this->t->company->timezone)->format('d/m/Y H:i:s'), $e['source'], preg_match('/^[=+@\-]/', $e['description']) ? "'".$e['description'] : $e['description'], config('poseitech.payment_labels.'.$e['method'], $e['method']), number_format(max(0, $e['amount']) / 100, 2, ',', ''), number_format(max(0, -$e['amount']) / 100, 2, ',', ''), number_format($e['balance'] / 100, 2, ',', '')], ';', '"', '');
+                fputcsv($out, ['Data', 'Modo', 'Descrição', 'Entrada', 'Saída', 'Diferença'], ';', '"', '');
+                foreach ($data['groups'] as $group) {
+                    fputcsv($out, [Carbon::parse($group['date'])->format('d/m/Y'), config('poseitech.payment_labels.'.$group['method'], $group['method']), $group['count'].' movimentações', number_format($group['incoming'] / 100, 2, ',', ''), number_format($group['outgoing'] / 100, 2, ',', ''), number_format($group['difference'] / 100, 2, ',', '')], ';', '"', '');
                 }
                 fclose($out);
             }, 'fluxo-'.$data['month'].'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);

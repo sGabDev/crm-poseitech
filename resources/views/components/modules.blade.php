@@ -1,6 +1,7 @@
 <section class="card">
 <h2>Módulos da empresa</h2>
 <p class="muted">Somente o suporte pode alterar os módulos. Consulte abaixo os módulos ativos.</p>
+<p class="muted">O módulo Caixa é obrigatório quando Vendas está ativo.</p>
 @can('platform')
 <form method="post" action="{{ url('/settings') }}" class="stack">@csrf<input type="hidden" name="section" value="modules">
 @endcan

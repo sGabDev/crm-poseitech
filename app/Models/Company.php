@@ -22,6 +22,10 @@ class Company extends Model
 
     public function enabled(string $module): bool
     {
+        if ($module === 'cash' && in_array('sales', $this->modules ?? [])) {
+            return true;
+        }
+
         return array_key_exists($module, config('poseitech.modules')) && in_array($module, $this->modules ?? []);
     }
 

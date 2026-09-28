@@ -7,10 +7,12 @@ use App\Models\Plan;
 use App\Models\User;
 use App\Services\CashFlow;
 use App\Services\Commerce;
+use App\Services\CompanySmtp;
 use App\Services\Tenant;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Mailer;
+use Illuminate\Mail\Transport\ArrayTransport;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -43,10 +45,79 @@ class CommerceTest extends TestCase
         $this->product = $t->insert('products', ['name' => 'Produto A', 'price' => 10000, 'cost' => 4000, 'stock' => 10, 'active' => true]);
     }
 
-    private function sale(array $overrides = []): array
+    private function sale(array $overrides = [], bool $openCash = true): array
     {
+        if ($openCash && ! DB::table('cash_registers')->where('company_id', $this->company->id)->whereNull('closed_at')->exists()) {
+            DB::table('cash_registers')->insert(['company_id' => $this->company->id, 'user_id' => $this->owner->id, 'opening' => 0, 'created_at' => now(), 'updated_at' => now()]);
+        }
+
         return array_replace(['request_key' => (string) Str::uuid(), 'customer_id' => $this->customer, 'items' => [['product_id' => $this->product, 'quantity' => 2]], 'discount' => '0', 'extra' => '0',
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
+    }
+
+    public function test_every_sale_requires_an_open_register_even_wallet_or_fiado(): void
+    {
+        app(Tenant::class)->insert('wallet_entries', ['customer_id' => $this->customer, 'user_id' => $this->owner->id, 'amount' => 50000, 'description' => 'Saldo inicial']);
+        foreach (['cash', 'pix', 'card', 'fiado'] as $method) {
+            $this->post('/sales', $this->sale(['auto_payment' => 1, 'use_balance' => 1, 'payments' => [['method' => $method, 'amount' => '0']]], false))->assertSessionHasErrors('operation');
+        }
+        $this->assertSame(0, DB::table('sales')->count());
+        $this->assertSame(10, DB::table('products')->value('stock'));
+        $this->assertSame(50000, (int) DB::table('wallet_entries')->sum('amount'));
+        $this->get('/sales/new')->assertOk()->assertSee('Abra o caixa antes');
+        $this->post('/cash', ['action' => 'open', 'amount' => '0'])->assertSessionHasNoErrors();
+        $this->post('/sales', $this->sale(['auto_payment' => 1, 'use_balance' => 1], false))->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::table('sales')->count());
+    }
+
+    public function test_statement_groups_same_day_and_mode_and_separates_directions(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-10 15:00:00', 'America/Sao_Paulo'));
+        $t = app(Tenant::class);
+        foreach ([1000, 2500, -500] as $amount) {
+            $t->insert('flow_entries', ['user_id' => $this->owner->id, 'amount' => $amount, 'method' => 'pix', 'description' => 'Teste', 'category' => 'Ajuste', 'occurred_at' => now(), 'request_key' => (string) Str::uuid()]);
+        }
+        $t->insert('flow_entries', ['user_id' => $this->owner->id, 'amount' => 100, 'method' => 'cash', 'description' => 'Dinheiro', 'category' => 'Ajuste', 'occurred_at' => now(), 'request_key' => (string) Str::uuid()]);
+        $this->travelTo(Carbon::parse('2026-09-11 15:00:00', 'America/Sao_Paulo'));
+        $t->insert('flow_entries', ['user_id' => $this->owner->id, 'amount' => 800, 'method' => 'pix', 'description' => 'Outro dia', 'category' => 'Ajuste', 'occurred_at' => now(), 'request_key' => (string) Str::uuid()]);
+        $data = app(CashFlow::class)->month('2026-09');
+        $this->assertCount(3, $data['groups']);
+        $pix = $data['groups']->first(fn ($g) => $g['method'] === 'pix' && $g['date'] === '2026-09-10');
+        $this->assertSame(3500, $pix['incoming']);
+        $this->assertSame(500, $pix['outgoing']);
+        $this->assertSame(3000, $pix['difference']);
+        $this->assertSame($data['incoming'], $data['groups']->sum('incoming'));
+        $this->assertSame($data['outgoing'], $data['groups']->sum('outgoing'));
+        $this->get('/cash-flow?month=2026-09')->assertOk()->assertSee('Diferença')->assertSee('data-flow-toggle', false);
+        $this->travelBack();
+    }
+
+    public function test_gmail_configuration_corrects_port_scheme_and_password_spaces_without_leaking_secrets(): void
+    {
+        $smtp = ['host' => 'smtp.gmail.com', 'port' => 465, 'encryption' => 'tls', 'username' => 'user@gmail.com', 'password' => 'abcd efgh ijkl mnop', 'from' => 'user@gmail.com'];
+        $config = CompanySmtp::config($smtp);
+        $this->assertSame('smtps', $config['scheme']);
+        $this->assertSame('abcdefghijklmnop', $config['password']);
+        $this->assertSame('gmail.com', $config['local_domain']);
+        $smtp['port'] = 587;
+        $smtp['encryption'] = 'ssl';
+        $this->assertSame('smtp', CompanySmtp::config($smtp)['scheme']);
+        $message = CompanySmtp::failure(new \RuntimeException('535 authentication failed secret-password'));
+        $this->assertStringContainsString('Autenticação', $message);
+        $this->assertStringNotContainsString('secret-password', $message);
+    }
+
+    public function test_company_mail_renders_real_message_and_sender_without_external_smtp(): void
+    {
+        $this->company->update(['smtp' => ['host' => 'smtp.gmail.com', 'port' => 587, 'encryption' => 'tls', 'username' => 'user@gmail.com', 'password' => 'app-password', 'from' => 'user@gmail.com', 'from_name' => 'Empresa']]);
+        $id = app(Tenant::class)->insert('email_logs', ['recipient' => 'customer@example.test', 'subject' => 'Comprovante', 'body' => 'Conteúdo de teste']);
+        $mailer = new Mailer('test', app('view'), new ArrayTransport, app('events'));
+        Mail::shouldReceive('build')->once()->andReturn($mailer);
+        $this->post('/settings/mail', ['action' => 'send', 'id' => $id])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('email_logs', ['id' => $id, 'status' => 'sent']);
+        $sent = $mailer->getSymfonyTransport()->messages()->first()->getOriginalMessage();
+        $this->assertSame('user@gmail.com', $sent->getFrom()[0]->getAddress());
+        $this->assertStringContainsString('Conteúdo de teste', $sent->getHtmlBody());
     }
 
     public function test_flow_carries_prior_month_and_keeps_payment_and_later_refund_in_correct_months(): void
@@ -54,6 +125,7 @@ class CommerceTest extends TestCase
         $this->travelTo(Carbon::parse('2026-08-20 12:00:00', $this->company->timezone));
         $this->post('/sales', $this->sale(['auto_payment' => 1]))->assertSessionHasNoErrors();
         $id = DB::table('sales')->value('id');
+        $this->post('/cash', ['action' => 'close', 'amount' => '0'])->assertSessionHasNoErrors();
         $this->travelTo(Carbon::parse('2026-09-02 12:00:00', $this->company->timezone));
         $this->post('/cash', ['action' => 'open', 'amount' => '0'])->assertSessionHasNoErrors();
         $this->post('/sales/'.$id.'/cancel', ['reason' => 'Devolução posterior'])->assertSessionHasNoErrors();
@@ -139,6 +211,7 @@ class CommerceTest extends TestCase
     public function test_deposit_partial_debt_and_failed_cash_deposit_are_atomic(): void
     {
         $this->post('/sales', $this->sale())->assertSessionHasNoErrors();
+        $this->post('/cash', ['action' => 'close', 'amount' => '0'])->assertSessionHasNoErrors();
         $d = ['customer_id' => $this->customer, 'amount' => '20', 'method' => 'cash', 'request_key' => (string) Str::uuid()];
         $this->post('/customer-deposits', $d)->assertSessionHasErrors();
         $this->assertSame(0, DB::table('customer_deposits')->count());
@@ -256,6 +329,7 @@ class CommerceTest extends TestCase
         $this->get('/credit?sort=recent')->assertOk()->assertSee('Cliente A')->assertSee('180,00');
         $this->get('/sales')->assertOk()->assertSee('Fiado')->assertDontSee('A receber')->assertDontSee('Pendente');
         $this->post('/customers/'.$this->customer.'/debt-payment', array_replace($request, ['request_key' => (string) Str::uuid(), 'amount' => '181']))->assertSessionHasErrors();
+        $this->post('/cash', ['action' => 'close', 'amount' => '0'])->assertSessionHasNoErrors();
         $this->post('/customers/'.$this->customer.'/debt-payment', array_replace($request, ['request_key' => (string) Str::uuid(), 'amount' => '20', 'method' => 'cash']))->assertSessionHasErrors();
         $this->assertSame(1, DB::table('debt_receipts')->count());
         $this->post('/customers/'.$this->customer.'/debt-payment', array_replace($request, ['request_key' => (string) Str::uuid(), 'amount' => '180']))->assertSessionHasNoErrors();
@@ -287,7 +361,7 @@ class CommerceTest extends TestCase
         $support = User::factory()->create(['role' => 'super', 'company_id' => null]);
         $this->actingAs($support)->withSession(['support_company' => $this->company->id]);
         $this->post('/settings', ['section' => 'modules', 'modules' => ['delivery', 'credit']])->assertSessionHasNoErrors();
-        $this->assertEqualsCanonicalizing(['delivery', 'credit', 'orders', 'sales', 'products', 'customers'], $this->company->fresh()->modules);
+        $this->assertEqualsCanonicalizing(['delivery', 'credit', 'orders', 'sales', 'products', 'customers', 'cash'], $this->company->fresh()->modules);
         $this->get('/orders')->assertOk();
         $this->get('/finance')->assertRedirect('/credit');
     }

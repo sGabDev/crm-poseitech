@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Company;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
@@ -27,15 +28,17 @@ class MailQueue
         }
         try {
             $smtp = $company->smtp;
-            $mailer = Mail::build(['transport' => 'smtp', 'host' => $smtp['host'], 'port' => $smtp['port'], 'username' => $smtp['username'] ?? null, 'password' => $smtp['password'] ?? null, 'scheme' => $smtp['encryption'] === 'ssl' ? 'smtps' : 'smtp', 'require_tls' => true, 'timeout' => 15]);
+            $mailer = Mail::build(CompanySmtp::config($smtp));
             $mailer->send('emails.message', ['body' => $email->body, 'companyName' => $company->name], function ($m) use ($email, $smtp) {
-                $m->to($email->recipient)->from($smtp['from'], $smtp['from_name'])->subject($email->subject);
+                $m->to($email->recipient)->from($smtp['from'], $smtp['from_name'] ?? '')->subject($email->subject);
             });
             $query->update(['status' => 'sent', 'error' => null, 'sent_at' => now(), 'updated_at' => now()]);
 
             return 'sent';
         } catch (Throwable $e) {
-            $query->update(['status' => 'failed', 'error' => 'Falha no envio SMTP. Verifique conexão e credenciais.', 'updated_at' => now()]);
+            $reason = CompanySmtp::failure($e);
+            $query->update(['status' => 'failed', 'error' => $reason, 'updated_at' => now()]);
+            Log::warning('company.smtp_failed', ['company_id' => $company->id, 'email_id' => $id, 'category' => $reason, 'exception_class' => get_class($e)]);
 
             return 'failed';
         }

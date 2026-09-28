@@ -80,6 +80,14 @@ Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizad
 Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
 # Atualização: fiado por cliente
 
+## SMTP Gmail, extrato agrupado e caixa obrigatório
+
+Envie também `public/assets/layout-fixes.css`, `app/Services/CompanySmtp.php` e `resources/views/components/flow-statement.blade.php`, junto com os demais arquivos alterados. Limpe as views e configurações após atualizar. Esta etapa não cria novas tabelas.
+
+Gmail: use `smtp.gmail.com`, e-mail completo como usuário, senha de aplicativo e remetente autorizado pela conta. Porta 465 usa SSL/TLS e 587 usa STARTTLS; o aplicativo corrige a combinação nas portas padrão e remove os espaços da senha de aplicativo Google. Referência: https://support.google.com/a/answer/176600 . Em Configurações, salve e clique em **Testar conexão SMTP salva**, depois tente uma mensagem da fila. O teste confirma conexão/autenticação, mas não garante aceitação de um remetente ou destinatário específico. A fila agora mostra a categoria da falha, sem guardar a senha ou a conversa SMTP no log.
+
+Toda nova venda exige caixa aberto, inclusive Pix, cartão, fiado e saldo do cliente. Caixa é uma dependência obrigatória de Vendas. O extrato e o CSV têm uma linha por dia e forma de pagamento no fuso da empresa; a diferença corresponde às entradas menos as saídas daquele grupo. Abra o modo para conferir separadamente as origens das entradas e saídas.
+
 ## Depósitos, fluxo de caixa, equipe e fila de e-mails
 
 Envie a migração `2026_09_28_000003_wallet_flow_and_team.php` junto com os novos controllers, serviços, views, rotas e arquivos `public/assets`. Execute `migrate --force` e limpe os caches com PHP 8.3 conforme os comandos abaixo. A aplicação avisa quando o banco ainda não recebeu a atualização.

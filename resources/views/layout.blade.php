@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>@yield('title','Visão geral') · PoseiTech CRM</title>
 <link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ filemtime(public_path('assets/app.css')) }}">
+<link rel="stylesheet" href="{{ asset('assets/layout-fixes.css') }}?v={{ filemtime(public_path('assets/layout-fixes.css')) }}">
 <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}" defer>
 </script>
 </head>

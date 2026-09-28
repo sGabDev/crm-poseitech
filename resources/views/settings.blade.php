@@ -25,6 +25,7 @@
 </details>
 <details class="card">
 <summary>Integração de e-mail (SMTP)</summary>
+<p class="muted">Gmail: servidor smtp.gmail.com, usuário com o e-mail completo e senha de aplicativo. Use porta 587 (STARTTLS) ou 465 (SSL/TLS). O remetente deve ser a própria conta ou um endereço autorizado nela. A senha pode ser colada com espaços.</p>
 <form method="post" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="smtp">@foreach(['host'=>'Servidor SMTP','port'=>'Porta','username'=>'Usuário','from'=>'E-mail remetente','from_name'=>'Nome remetente'] as $key=>$label)<label>{{ $label }}<input name="{{ $key }}" value="{{ old($key,$smtp[$key] ?? '') }}" type="{{ $key==='port' ? 'number' : ($key==='from' ? 'email' : 'text') }}" @required($key!=='username')>
 </label>@endforeach<label>Senha SMTP<input name="password" type="password" autocomplete="new-password" placeholder="Deixe em branco para manter a senha atual">
 </label>
@@ -37,6 +38,7 @@
 <button>Salvar SMTP</button>
 </div>
 </form>
+<form method="post" action="{{ url('/settings/mail') }}" class="separated">@csrf<input type="hidden" name="action" value="test"><button class="secondary">Testar conexão SMTP salva</button></form>
 </details>
 @include('components.mail-queue')
 <details class="card">

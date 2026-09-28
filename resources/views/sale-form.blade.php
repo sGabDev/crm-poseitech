@@ -115,7 +115,9 @@
                     <div class="metric-row" id="wallet-row" hidden><span>Valor restante na conta</span><strong id="wallet-remaining"></strong></div>
                     <label>Observação<textarea name="notes" rows="3">{{ old('notes') }}</textarea>
                     </label>
-                    <button class="full-width">Concluir venda →</button>
+                    @if(!$registerOpen)<p class="notice error">Abra o caixa antes de concluir uma venda, qualquer que seja a forma de pagamento.</p>@if(auth()->user()->allows('cash',true))<a class="button secondary" href="{{ url('/cash') }}">Abrir caixa</a>@else<p>Peça ao responsável pelo caixa para abri-lo.</p>@endif
+                    @endif
+                    <button class="full-width" @disabled(!$registerOpen)>Concluir venda →</button>
                     <small class="muted">Vendedor: {{ auth()->user()->name }}</small>
                 </section>
             </aside>

@@ -26,6 +26,9 @@ class Commerce
             if ($existing = $this->t->query('sales')->where('request_key', $d['request_key'])->first()) {
                 return $existing->id;
             }
+            if (! $this->t->query('cash_registers')->whereNull('closed_at')->exists()) {
+                $this->fail('Abra o caixa antes de registrar qualquer venda, inclusive Pix, cartão, fiado ou saldo da conta.');
+            }
             $customer = ! empty($d['customer_id']) ? $this->t->find('customers', $d['customer_id']) : null;
             if ($customer?->anonymized_at) {
                 $this->fail('Cliente anonimizado.');

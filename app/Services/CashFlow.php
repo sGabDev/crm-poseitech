@@ -35,7 +35,7 @@ class CashFlow
 
     public function month(string $month): array
     {
-        $start = Carbon::createFromFormat('!Y-m', $month, $this->t->company->timezone)->startOfMonth();
+        $start = Carbon::createFromFormat('!Y-m', $month, ($this->t->company->timezone ?: 'America/Sao_Paulo'))->startOfMonth();
         $end = $start->copy()->addMonth()->utc()->toDateTimeString();
         $startUtc = $start->utc()->toDateTimeString();
         $all = $this->entries($end);
@@ -46,8 +46,20 @@ class CashFlow
 
             return $e + ['balance' => $balance];
         });
+        $groups = $entries->groupBy(function ($e) {
+            $method = in_array($e['method'], ['credit', 'debit']) ? 'card' : $e['method'];
 
-        return ['month' => $month, 'opening' => $opening, 'closing' => $balance, 'incoming' => $entries->where('amount', '>', 0)->sum('amount'), 'outgoing' => -$entries->where('amount', '<', 0)->sum('amount'), 'entries' => $entries,
+            return Carbon::parse($e['date'])->timezone(($this->t->company->timezone ?: 'America/Sao_Paulo'))->format('Y-m-d').'|'.$method;
+        })->sortKeys()->map(function ($items, $key) {
+            [$date, $method] = explode('|', $key, 2);
+            $incoming = $items->where('amount', '>', 0);
+            $outgoing = $items->where('amount', '<', 0);
+
+            return ['date' => $date, 'method' => $method, 'incoming' => $incoming->sum('amount'), 'outgoing' => -$outgoing->sum('amount'), 'difference' => $items->sum('amount'),
+                'incoming_details' => $incoming->groupBy('source'), 'outgoing_details' => $outgoing->groupBy('source'), 'count' => $items->count()];
+        })->values();
+
+        return ['groups' => $groups, 'month' => $month, 'opening' => $opening, 'closing' => $balance, 'incoming' => $entries->where('amount', '>', 0)->sum('amount'), 'outgoing' => -$entries->where('amount', '<', 0)->sum('amount'), 'entries' => $entries,
             'sources' => $entries->groupBy('source')->map(fn ($group) => $group->groupBy('method')->map(fn ($method) => ['in' => $method->where('amount', '>', 0)->sum('amount'), 'out' => -$method->where('amount', '<', 0)->sum('amount')]))];
     }
 }
