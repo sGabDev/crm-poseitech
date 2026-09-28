@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\MailQueue;
 use App\Services\Tenant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -22,7 +24,7 @@ class SettingsController extends Controller
         }
         Gate::authorize('manage-company');
 
-        return view('settings', ['staff' => User::where('company_id', $this->t->id())->get(), 'smtp' => $this->t->company->smtp ?? [], 'audit' => $this->t->query('audit_logs')->orderByDesc('id')->paginate(15)]);
+        return view('settings', ['mailQueue' => $this->t->query('email_logs')->whereIn('status', ['pending', 'failed', 'sending'])->orderBy('id')->paginate(20, ['*'], 'mail_page'), 'staff' => User::where('company_id', $this->t->id())->whereNull('deleted_at')->get(), 'smtp' => $this->t->company->smtp ?? [], 'audit' => $this->t->query('audit_logs')->orderByDesc('id')->paginate(15)]);
     }
 
     public function save(Request $r)
@@ -78,7 +80,7 @@ class SettingsController extends Controller
     public function staff(Request $r, ?int $id = null)
     {
         Gate::authorize('manage-company');
-        $user = $id ? User::where('company_id', $this->t->id())->findOrFail($id) : null;
+        $user = $id ? User::where('company_id', $this->t->id())->whereNull('deleted_at')->findOrFail($id) : null;
         $d = $r->validate(['name' => 'required|string|max:160', 'email' => ['required', 'email', 'max:180', Rule::unique('users')->ignore($id)],
             'password' => [$id ? 'nullable' : 'required', Password::min(10)->letters()->numbers()], 'role' => 'required|in:admin,staff', 'active' => 'nullable|boolean',
             'permissions' => 'nullable|array', 'permissions.*' => ['string', Rule::in(collect(array_keys(config('poseitech.modules')))->flatMap(fn ($m) => [$m.'.read', $m.'.write'])->all())]]);
@@ -105,5 +107,54 @@ class SettingsController extends Controller
         });
 
         return back()->with('success', 'Usuário salvo.');
+    }
+
+    public function staffAction(Request $r, int $id)
+    {
+        Gate::authorize('manage-company');
+        $d = $r->validate(['action' => 'required|in:activate,deactivate,delete']);
+        DB::transaction(function () use ($id, $d) {
+            $this->t->lock();
+            $user = User::where('company_id', $this->t->id())->whereNull('deleted_at')->findOrFail($id);
+            if ($d['action'] !== 'activate') {
+                if ($user->id === auth()->id() || ($user->role === 'admin' && $user->active && User::where('company_id', $this->t->id())->whereNull('deleted_at')->where('role', 'admin')->where('active', true)->count() <= 1)) {
+                    throw ValidationException::withMessages(['staff' => 'Não é possível remover o próprio acesso nem o último administrador ativo.']);
+                }
+            }
+            $user->forceFill(['active' => $d['action'] === 'activate', 'deleted_at' => $d['action'] === 'delete' ? now() : null, 'remember_token' => Str::random(60)])->save();
+            DB::table('sessions')->where('user_id', $id)->delete();
+            $this->t->audit('staff.'.$d['action'], 'users', $id);
+        });
+
+        return back()->with('success', 'Equipe atualizada.');
+    }
+
+    public function mailAction(Request $r, MailQueue $queue)
+    {
+        Gate::authorize('manage-company');
+        $d = $r->validate(['action' => 'required|in:clear,retry,send,process', 'id' => 'nullable|integer']);
+        if ($d['action'] === 'clear') {
+            $count = $this->t->query('email_logs')->whereIn('status', ['pending', 'failed'])->update(['status' => 'cancelled', 'updated_at' => now()]);
+            $this->t->audit('mail.cleared', 'email_logs', null, null, ['count' => $count]);
+
+            return back()->with('success', 'Fila limpa. Envios já iniciados não são interrompidos.');
+        }
+        if (! $this->t->company->smtp) {
+            throw ValidationException::withMessages(['smtp' => 'Configure o SMTP antes de enviar.']);
+        }
+        if ($d['action'] === 'retry') {
+            $this->t->query('email_logs')->where('status', 'failed')->update(['status' => 'pending', 'error' => null, 'updated_at' => now()]);
+            $this->t->audit('mail.retry_all');
+
+            return back()->with('mail_run', true)->with('success', 'Processando pendentes. Mantenha esta página aberta; o cron continua a fila se você sair.');
+        }
+        $email = $d['action'] === 'send' ? $this->t->find('email_logs', (int) ($d['id'] ?? 0)) : $this->t->query('email_logs')->where('status', 'pending')->orderBy('id')->first();
+        $status = $email ? $queue->send($email->id, $this->t->company, $d['action'] === 'send') : null;
+        if ($d['action'] === 'process') {
+            return response()->json(['processed' => (bool) $email, 'status' => $status]);
+        }
+        $this->t->audit('mail.manual_send', 'email_logs', $email->id);
+
+        return back()->with('success', 'Resultado da tentativa: '.$status.'.');
     }
 }

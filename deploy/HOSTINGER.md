@@ -80,6 +80,16 @@ Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizad
 Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
 # Atualização: fiado por cliente
 
+## Depósitos, fluxo de caixa, equipe e fila de e-mails
+
+Envie a migração `2026_09_28_000003_wallet_flow_and_team.php` junto com os novos controllers, serviços, views, rotas e arquivos `public/assets`. Execute `migrate --force` e limpe os caches com PHP 8.3 conforme os comandos abaixo. A aplicação avisa quando o banco ainda não recebeu a atualização.
+
+- Em Nova venda, selecione **Depósito na conta do cliente**. O depósito quita primeiro os fiados mais antigos e mantém o excedente como saldo para compras futuras. Depósitos não contam como vendas; o uso do saldo não duplica entradas no fluxo. O cancelamento da compra devolve a parte paga com saldo à conta do cliente.
+- **Fluxo de caixa** mostra o mês, saldo anterior/final, entradas, saídas, estornos, caixas e formas de pagamento, com extrato e CSV. Registre retiradas, despesas, aportes e o saldo inicial diretamente nessa tela. A abertura diária de caixa não é receita e não entra novamente no fluxo. O saldo considera apenas movimentações registradas no sistema; retiradas diretas não alteram o caixa operacional.
+- Excluir alguém da equipe revoga o acesso e preserva as operações históricas. Usuários excluídos não ocupam o limite da equipe. Não é permitido remover o próprio acesso ou o último administrador ativo.
+- Em Configurações, a fila permite enviar uma mensagem, tentar todas as pendentes/falhas ou cancelar a fila. Para enviar todas, mantenha a página aberta. O cron `poseitech:mail` continua processando pendentes automaticamente. A limpeza preserva o histórico e não interrompe mensagens já em envio. Uma falha de rede após aceitação pelo SMTP pode deixar o resultado incerto; confira com o destinatário antes de repetir uma mensagem nessa situação.
+
+
 Se Produtos ou Equipe exibirem `Unknown column 'deleted_at'` ou `Unknown column 'must_change_password'`, envie também o arquivo `database/migrations/2026_09_28_000002_password_and_product_deletion.php` antes de executar os comandos abaixo. Esses erros indicam banco sem a migração correspondente. A migração aceita uma execução anterior parcialmente concluída, sem recriar colunas existentes. Confirme com `php artisan migrate:status`, usando o mesmo executável PHP 8.3 abaixo. Não use `migrate:fresh` em produção.
 
 Envie também `public/assets/app.js`, `public/assets/app.css` e as views atualizadas. O layout inclui uma versão nos endereços desses arquivos para que o navegador carregue a busca e a máscara novas.

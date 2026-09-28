@@ -27,7 +27,7 @@
 <nav>
 <span class="nav-label">SEU NEGÓCIO</span>
 @if(isset($company))
-@foreach([['/dashboard','Visão geral','sales','◫'],['/opportunities','Oportunidades','customers','↗'],['/sales','Vendas','sales','▤'],['/records/customers','Clientes','customers','◎'],['/records/products','Produtos e serviços','products','▦'],['/cash','Caixa','cash','▣'],['/credit','Fiados','credit','◷'],['/stock','Estoque','stock','▥'],['/orders','Pedidos','orders','☷'],['/campaigns','Campanhas','campaigns','◇'],['/records/coupons','Cupons','loyalty','%'],['/records/suppliers','Fornecedores','finance','□'],['/records/goals','Metas','sales','⚑'],['/reports','Relatórios e previsão','finance','↗']] as [$path,$label,$module,$symbol])
+@foreach([['/dashboard','Visão geral','sales','◫'],['/opportunities','Oportunidades','customers','↗'],['/sales','Vendas','sales','▤'],['/records/customers','Clientes','customers','◎'],['/records/products','Produtos e serviços','products','▦'],['/cash-flow','Fluxo de caixa','cash','$'],['/cash','Caixa','cash','▣'],['/credit','Fiados','credit','◷'],['/stock','Estoque','stock','▥'],['/orders','Pedidos','orders','☷'],['/campaigns','Campanhas','campaigns','◇'],['/records/coupons','Cupons','loyalty','%'],['/records/suppliers','Fornecedores','finance','□'],['/records/goals','Metas','sales','⚑'],['/reports','Relatórios e previsão','finance','↗']] as [$path,$label,$module,$symbol])
 @if($company->enabled($module) && auth()->user()->allows($module))<a class="{{ request()->is(ltrim($path,'/').'*') ? 'active' : '' }}" href="{{ url($path) }}">
 <span class="nav-symbol">{{ $symbol }}</span>{{ $label }}</a>@endif
 @endforeach

@@ -63,5 +63,6 @@
 </tr>@endforeach</tbody>
 </table>
 </div>
-</section>@include('components.credits',['readonly'=>true])
+</section>@include('components.wallet')
+@include('components.credits',['readonly'=>true])
 @endsection

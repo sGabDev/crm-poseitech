@@ -10,7 +10,7 @@ class Tenant
 {
     public ?Company $company = null;
 
-    private const TABLES = ['debt_receipts', 'customers', 'products', 'suppliers', 'sales', 'sale_items', 'payments', 'cash_registers', 'cash_transactions', 'accounts', 'stock_movements', 'coupons', 'loyalty_transactions', 'customer_credits', 'orders', 'campaigns', 'email_logs', 'alerts', 'goals', 'audit_logs'];
+    private const TABLES = ['customer_deposits', 'wallet_entries', 'flow_entries', 'debt_receipts', 'customers', 'products', 'suppliers', 'sales', 'sale_items', 'payments', 'cash_registers', 'cash_transactions', 'accounts', 'stock_movements', 'coupons', 'loyalty_transactions', 'customer_credits', 'orders', 'campaigns', 'email_logs', 'alerts', 'goals', 'audit_logs'];
 
     public function id(): int
     {
@@ -57,7 +57,7 @@ class Tenant
     public function limit(string $resource): void
     {
         $limit = $this->company->plan->{$resource.'_limit'};
-        $count = $resource === 'users' ? DB::table('users')->where('company_id', $this->id())->count() : $this->query($resource)->count();
+        $count = $resource === 'users' ? DB::table('users')->where('company_id', $this->id())->whereNull('deleted_at')->count() : $this->query($resource)->count();
         if ($count >= $limit) {
             throw ValidationException::withMessages(['limit' => 'O limite do plano foi atingido. Contate a PoseiTech.']);
         }

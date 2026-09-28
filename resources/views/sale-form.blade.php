@@ -8,6 +8,8 @@
             <p>Selecione os itens e informe os valores recebidos.</p>
         </div>
     </div>
+    <div class="filters"><label>Tipo de operação<select id="operation-type"><option value="sale">Venda de produtos ou serviços</option><option value="deposit" @selected(old('operation')==='deposit')>Depósito na conta do cliente (não é venda)</option></select></label></div>
+    @include('components.deposit-form')
     <form method="post" action="{{ url('/sales') }}" id="sale-form" data-currency="{{ $company->currency }}">@csrf<input
             type="hidden" name="request_key" value="{{ old('request_key', (string) \Illuminate\Support\Str::uuid()) }}">
         <div class="grid wide-left">
@@ -18,7 +20,7 @@
                         <div class="search-picker"><input type="search" class="search-input" placeholder="Digite nome, telefone ou CPF" autocomplete="off" aria-label="Nome, telefone ou CPF"><div class="search-results" hidden></div></div>
                         <select name="customer_id" data-search-select="Nome, telefone ou CPF" hidden>
                             <option value="">Consumidor não identificado</option>@foreach($customers as $c)
-                                <option data-search="{{ $c->name }} {{ $c->phone }} {{ $c->document }}" value="{{ $c->id }}" @selected(old('customer_id') == $c->id)>{{ $c->name }}
+                                <option data-wallet="{{ $wallets[$c->id] ?? 0 }}" data-search="{{ $c->name }} {{ $c->phone }} {{ $c->document }}" value="{{ $c->id }}" @selected(old('customer_id') == $c->id)>{{ $c->name }}
                             {{ $c->phone ? ' · ' . $c->phone : '' }}</option>@endforeach
                         </select>
                     </label>
@@ -48,9 +50,9 @@
                 </section>
                 <section class="card">
                     <h2>Pagamento</h2>
-                    <p class="muted">Com uma única forma, o valor é preenchido automaticamente. Em pagamentos divididos, o
-                        fiado corresponde ao restante.</p>
-                    <input type="hidden" name="auto_payment" id="auto-payment" value="1">
+                    <label class="check"><input type="checkbox" name="use_balance" id="use-balance" value="1" @checked(old('use_balance',true))>Usar saldo disponível na conta do cliente</label>
+                    <p class="muted">O valor é preenchido automaticamente, mas você pode editá-lo. Para voltar ao cálculo automático, clique em “Preencher com o total”. O restante não pago fica em fiado.</p>
+                    <input type="hidden" name="auto_payment" id="auto-payment" value="{{ old('auto_payment',1) }}">
                     <div id="sale-payments">@foreach(old('payments', [['method' => 'pix', 'amount' => 0]]) as $index => $payment)
                         <div class="payment-line">
                             <label>Forma<select
@@ -66,6 +68,7 @@
                     </div>@endforeach
                     </div>
                     <button type="button" id="add-payment" class="secondary">+ Outra forma de pagamento</button>
+                    <button type="button" id="reset-payment" class="secondary">Preencher com o total</button>
                 </section>
                 @if($company->enabled('orders'))
                     <section class="card">
@@ -93,22 +96,23 @@
                         <span>Subtotal</span>
                         <strong id="subtotal">R$ 0,00</strong>
                     </div>
-                    <label>Desconto ({{ $company->currency ?? 'BRL' }})<input id="discount" type="number" name="discount"
-                            step="0.01" min="0" value="{{ old('discount', 0) }}">
+                    <label>Desconto ({{ $company->currency ?? 'BRL' }})<input id="discount" type="text" name="discount"
+                            value="{{ old('discount', 0) }}" placeholder="10,00 ou 10%">
                     </label>
-                    <label>Acréscimo ({{ $company->currency ?? 'BRL' }})<input id="extra" type="number" name="extra"
-                            step="0.01" min="0" value="{{ old('extra', 0) }}">
-                    </label>@if($company->enabled('loyalty'))<label>Cupom<input name="coupon" value="{{ old('coupon') }}"
+                    <label>Acréscimo ({{ $company->currency ?? 'BRL' }})<input id="extra" type="text" name="extra"
+                            value="{{ old('extra', 0) }}" placeholder="10,00 ou 10%">
+                    </label><small class="muted">Digite 10,00 para um valor em dinheiro ou 10% para um percentual do subtotal.</small>@if($company->enabled('loyalty'))<label>Cupom<input name="coupon" value="{{ old('coupon') }}"
                                 placeholder="Código do cupom">
                         </label>
                     <small class="muted">O cupom será validado ao concluir.</small>@endif<div class="metric-row total">
                         <span>Total estimado</span>
                         <strong id="sale-total">R$ 0,00</strong>
                     </div>
-                    <div class="metric-row">
+                    <div class="metric-row" id="pending-row" hidden>
                         <span>Valor em fiado</span>
                         <strong id="sale-pending">R$ 0,00</strong>
                     </div>
+                    <div class="metric-row" id="wallet-row" hidden><span>Valor restante na conta</span><strong id="wallet-remaining"></strong></div>
                     <label>Observação<textarea name="notes" rows="3">{{ old('notes') }}</textarea>
                     </label>
                     <button class="full-width">Concluir venda →</button>

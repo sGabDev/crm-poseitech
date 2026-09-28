@@ -38,6 +38,7 @@
 </div>
 </form>
 </details>
+@include('components.mail-queue')
 <details class="card">
 <summary>Fidelidade e automações</summary>
 <form method="post" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="loyalty">
@@ -57,7 +58,9 @@
 <section class="card">
 <h2>Equipe e permissões</h2>
 <p class="muted">{{ $staff->count() }} de {{ $company->plan->users_limit }} usuários no plano.</p>@foreach($staff as $person)<details class="separated">
-<summary>{{ $person->name }} · {{ $person->email }} · {{ $person->active ? 'Ativo' : 'Inativo' }}</summary>@include('components.staff-form',['person'=>$person])</details>@endforeach<details class="separated">
+<summary>{{ $person->name }} · {{ $person->email }} · {{ $person->active ? 'Ativo' : 'Inativo' }}</summary>@include('components.staff-form',['person'=>$person])
+@include('components.staff-actions')
+</details>@endforeach<details class="separated">
 <summary>+ Adicionar usuário</summary>@include('components.staff-form',['person'=>null])</details>
 </section>
 <section class="card">

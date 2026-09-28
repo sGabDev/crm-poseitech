@@ -1,0 +1,8 @@
+<section class="card"><h2>E-mails pendentes e tentativas com falha</h2>
+<p>{{ $mailQueue->total() }} mensagem(ns). Os envios automáticos dependem do cron configurado na hospedagem. Mensagens já enviadas não são reenviadas.</p>
+@if(session('mail_run'))<p role="status" data-mail-process="{{ url('/settings/mail') }}" data-token="{{ csrf_token() }}">Iniciando processamento...</p>@endif
+<div class="actions"><form method="post" action="{{ url('/settings/mail') }}">@csrf<input type="hidden" name="action" value="retry"><button>Tentar enviar todos os pendentes e falhos</button></form>
+<form method="post" action="{{ url('/settings/mail') }}" data-confirm="Cancelar todos os e-mails pendentes e com falha?">@csrf<input type="hidden" name="action" value="clear"><button class="secondary">Limpar fila</button></form></div>
+<div class="table-wrap"><table><thead><tr><th>Destinatário</th><th>Assunto</th><th>Status</th><th>Tentativas</th><th>Ação</th></tr></thead><tbody>
+@forelse($mailQueue as $mail)<tr><td>{{ $mail->recipient }}</td><td>{{ $mail->subject }}<small>{{ $mail->error }}</small></td><td>{{ ['pending'=>'Pendente','failed'=>'Falhou','sending'=>'Em envio'][$mail->status] }}</td><td>{{ $mail->attempts }}</td><td>@if($mail->status!=='sending')<form method="post" action="{{ url('/settings/mail') }}">@csrf<input type="hidden" name="action" value="send"><input type="hidden" name="id" value="{{ $mail->id }}"><button class="secondary">Enviar este e-mail</button></form>@else Aguarde o envio em andamento @endif</td></tr>
+@empty<tr><td colspan="5">Fila vazia.</td></tr>@endforelse</tbody></table></div>{{ $mailQueue->withQueryString()->links() }}</section>

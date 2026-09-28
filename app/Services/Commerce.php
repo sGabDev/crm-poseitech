@@ -58,8 +58,8 @@ class Commerce
                 $subtotal += $line['p']->price * $line['quantity'];
                 $cost += $line['p']->cost * $line['quantity'];
             }
-            $discount = Tenant::cents($d['discount'] ?? 0);
-            $extra = Tenant::cents($d['extra'] ?? 0);
+            $discount = self::adjustment($d['discount'] ?? 0, $subtotal);
+            $extra = self::adjustment($d['extra'] ?? 0, $subtotal);
             $coupon = null;
             if (! empty($d['coupon'])) {
                 $this->t->authorize('loyalty', true);
@@ -89,11 +89,16 @@ class Commerce
                 $this->fail('Total da venda inválido.');
             }
             $submitted = collect($d['payments'] ?? []);
+            $wallet = 0;
+            if ($customer && ! empty($d['use_balance'])) {
+                $this->t->authorize('credit', true);
+                $wallet = min($total, max(0, (int) $this->t->query('wallet_entries')->where('customer_id', $customer->id)->sum('amount')));
+            }
             if (count($submitted) === 1 && ! empty($d['auto_payment'])) {
-                $submitted = $submitted->map(fn ($p) => array_merge($p, ['amount' => number_format($total / 100, 2, '.', '')]));
+                $submitted = $submitted->map(fn ($p) => array_merge($p, ['amount' => number_format(($total - $wallet) / 100, 2, '.', '')]));
             }
             $payments = $submitted->filter(fn ($p) => $p['method'] !== 'fiado' && Tenant::cents($p['amount'] ?? 0) > 0);
-            $paid = $payments->sum(fn ($p) => Tenant::cents($p['amount']));
+            $paid = $wallet + $payments->sum(fn ($p) => Tenant::cents($p['amount']));
             if ($paid > $total) {
                 $this->fail('Os pagamentos excedem o total da venda. Informe o valor recebido sem o troco.');
             }
@@ -104,12 +109,18 @@ class Commerce
                 }
             }
             $methods = $payments->pluck('method')->unique()->values()->all();
+            if ($wallet) {
+                $methods[] = 'wallet';
+            }
             if ($paid < $total) {
                 $methods[] = 'fiado';
             }
             $saleId = $this->t->insert('sales', ['customer_id' => $customer?->id, 'user_id' => auth()->id(), 'coupon_id' => $coupon?->id,
-                'subtotal' => $subtotal, 'discount' => $discount, 'extra' => $extra, 'total' => $total, 'cost' => $cost, 'paid' => $paid,
+                'subtotal' => $subtotal, 'discount' => $discount, 'extra' => $extra, 'total' => $total, 'cost' => $cost, 'paid' => $paid, 'wallet_used' => $wallet,
                 'notes' => $d['notes'] ?? null, 'receipt_hash' => hash('sha256', Str::random(64)), 'request_key' => $d['request_key'], 'payment_methods' => json_encode($methods), 'fiado_amount' => $total - $paid]);
+            if ($wallet) {
+                $this->t->insert('wallet_entries', ['customer_id' => $customer->id, 'user_id' => auth()->id(), 'sale_id' => $saleId, 'amount' => -$wallet, 'description' => 'Saldo utilizado na venda #'.$saleId]);
+            }
             foreach ($items as $line) {
                 $p = $line['p'];
                 $qty = $line['quantity'];
@@ -167,10 +178,25 @@ class Commerce
         $id = $this->t->insert('payments', ['sale_id' => $sale, 'account_id' => $account, 'customer_id' => $customer, 'user_id' => auth()->id(), 'amount' => $amount, 'method' => $method, 'direction' => $direction]);
         if ($register) {
             $this->t->insert('cash_transactions', ['cash_register_id' => $register->id, 'payment_id' => $id, 'user_id' => auth()->id(),
-                'description' => $sale ? 'Venda #'.$sale : 'Conta #'.$account, 'method' => $method, 'amount' => $direction === 'in' ? $amount : -$amount]);
+                'description' => $sale ? 'Venda #'.$sale : ($account ? 'Conta #'.$account : 'Depósito cliente #'.$customer), 'method' => $method, 'amount' => $direction === 'in' ? $amount : -$amount]);
         }
 
         return $id;
+    }
+
+    public static function adjustment($value, int $subtotal): int
+    {
+        $value = str_replace(',', '.', trim((string) ($value ?? '0')));
+        if (str_ends_with($value, '%')) {
+            $percent = Tenant::cents(trim(substr($value, 0, -1)));
+            if ($percent > 10000) {
+                throw ValidationException::withMessages(['discount' => 'O percentual deve estar entre 0% e 100%.']);
+            }
+
+            return (int) round($subtotal * $percent / 10000);
+        }
+
+        return Tenant::cents($value);
     }
 
     public function settle(int $id, array $d): void
@@ -242,7 +268,7 @@ class Commerce
                     $this->fail('Identificador de pagamento já utilizado.');
                 }
 
-return;
+                return;
             }
             $accounts = $this->t->query('accounts')->where('customer_id', $id)->where('origin', 'credit')->where('status', 'pending')->orderBy('due_date')->orderBy('id')->get();
             $amount = Tenant::cents($d['amount']);
@@ -266,7 +292,7 @@ return;
     public static function paymentLabel(object $sale): string
     {
         $methods = json_decode($sale->payment_methods ?? '[]', true) ?: [];
-        $labels = ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'credit' => 'Cartão', 'debit' => 'Cartão', 'boleto' => 'Boleto', 'other' => 'Outros'];
+        $labels = ['wallet' => 'Saldo da conta', 'cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'credit' => 'Cartão', 'debit' => 'Cartão', 'boleto' => 'Boleto', 'other' => 'Outros'];
         $paid = array_values(array_unique(array_map(fn ($m) => $labels[$m] ?? $m, array_filter($methods, fn ($m) => $m !== 'fiado'))));
         if (($sale->fiado_amount ?? 0) > 0) {
             return $paid ? 'Pago + Fiado ('.implode(', ', $paid).')' : 'Fiado';
@@ -289,6 +315,9 @@ return;
             $sale = $this->t->find('sales', $id);
             if ($sale->status === 'cancelled') {
                 $this->fail('Venda já cancelada.');
+            }
+            if ($sale->wallet_used) {
+                $this->t->insert('wallet_entries', ['customer_id' => $sale->customer_id, 'user_id' => auth()->id(), 'sale_id' => $id, 'amount' => $sale->wallet_used, 'description' => 'Saldo devolvido pelo cancelamento #'.$id]);
             }
             foreach ($this->t->query('payments')->where('sale_id', $id)->whereNull('reversed_at')->get() as $p) {
                 $register = $this->t->query('cash_registers')->whereNull('closed_at')->first();

@@ -3,10 +3,10 @@
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Analytics;
+use App\Services\MailQueue;
 use App\Services\Tenant;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('poseitech:admin {email} {--name=PoseiTech}', function () {
@@ -75,28 +75,7 @@ Artisan::command('poseitech:mail {--limit=50}', function () {
         if (! $company || ! $company->available() || ! $company->smtp) {
             continue;
         }
-        if ($email->campaign_id && ! $company->enabled('campaigns')) {
-            continue;
-        }
-        $customer = $email->customer_id ? DB::table('customers')->where('company_id', $company->id)->find($email->customer_id) : null;
-        if ($email->customer_id && (! $customer || $customer->anonymized_at || ($email->campaign_id && ! $customer->email_consent))) {
-            DB::table('email_logs')->where('id', $email->id)->update(['status' => 'cancelled', 'updated_at' => now()]);
-
-            continue;
-        }
-        if (! DB::table('email_logs')->where('id', $email->id)->where('status', 'pending')->update(['status' => 'sending', 'attempts' => DB::raw('attempts+1'), 'updated_at' => now()])) {
-            continue;
-        }
-        try {
-            $smtp = $company->smtp;
-            $mailer = Mail::build(['transport' => 'smtp', 'host' => $smtp['host'], 'port' => $smtp['port'], 'username' => $smtp['username'] ?? null, 'password' => $smtp['password'] ?? null, 'scheme' => $smtp['encryption'] === 'ssl' ? 'smtps' : 'smtp', 'require_tls' => true, 'timeout' => 20]);
-            $mailer->send('emails.message', ['body' => $email->body, 'companyName' => $company->name], function ($m) use ($email, $smtp) {
-                $m->to($email->recipient)->from($smtp['from'], $smtp['from_name'])->subject($email->subject);
-            });
-            DB::table('email_logs')->where('id', $email->id)->update(['status' => 'sent', 'sent_at' => now(), 'updated_at' => now()]);
-        } catch (Throwable $e) {
-            DB::table('email_logs')->where('id', $email->id)->update(['status' => 'failed', 'error' => 'Falha no envio SMTP. Verifique conexão e credenciais.', 'updated_at' => now()]);
-        }
+        app(MailQueue::class)->send($email->id, $company);
     }
     foreach (DB::table('campaigns')->where('status', 'queued')->get() as $campaign) {
         $q = DB::table('email_logs')->where('campaign_id', $campaign->id);

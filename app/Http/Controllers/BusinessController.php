@@ -57,13 +57,13 @@ class BusinessController extends Controller
     {
         $this->t->authorize('sales', true);
 
-        return view('sale-form', ['customers' => $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->get(), 'products' => $this->t->query('products')->where('active', true)->orderBy('name')->get()]);
+        return view('sale-form', ['wallets' => $this->t->query('wallet_entries')->selectRaw('customer_id, SUM(amount) as balance')->groupBy('customer_id')->pluck('balance', 'customer_id'), 'debts' => $this->t->query('accounts')->where('origin', 'credit')->where('status', 'pending')->selectRaw('customer_id, SUM(amount-paid) as balance')->groupBy('customer_id')->pluck('balance', 'customer_id'), 'customers' => $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->get(), 'products' => $this->t->query('products')->where('active', true)->orderBy('name')->get()]);
     }
 
     public function sell(Request $r)
     {
         $d = $r->validate(['request_key' => 'required|uuid', 'customer_id' => 'nullable|integer', 'items' => 'required|array|min:1|max:100', 'items.*.product_id' => 'required|integer',
-            'items.*.quantity' => 'required|integer|min:1|max:10000', 'items.*.addons' => 'nullable|array|max:20', 'items.*.addons.*' => 'integer|min:0|max:19', 'discount' => 'nullable|numeric|min:0', 'extra' => 'nullable|numeric|min:0',
+            'items.*.quantity' => 'required|integer|min:1|max:10000', 'items.*.addons' => 'nullable|array|max:20', 'items.*.addons.*' => 'integer|min:0|max:19', 'discount' => 'nullable|string|max:30', 'extra' => 'nullable|string|max:30', 'use_balance' => 'nullable|boolean',
             'payments' => 'required|array|min:1|max:8', 'payments.*.method' => 'required|in:'.implode(',', array_keys(config('poseitech.sale_methods'))),
             'payments.*.amount' => 'required|numeric|min:0', 'auto_payment' => 'nullable|boolean',
             'notes' => 'nullable|string|max:3000', 'coupon' => 'nullable|string|max:40', 'order' => 'nullable|boolean', 'delivery' => 'nullable|boolean',

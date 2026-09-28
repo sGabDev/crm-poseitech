@@ -193,7 +193,9 @@ class ResourceController extends Controller
         $products = $this->t->query('sale_items')->whereIn('sale_id', (clone $query)->where('status', 'completed')->select('id'))->selectRaw('name, SUM(quantity) as quantity')->groupBy('name')->orderByDesc('quantity')->limit(8)->get();
         $timeline = $this->t->query('audit_logs')->where('entity', 'customers')->where('entity_id', $id)->orderByDesc('id')->limit(20)->get();
 
-        return view('customer', compact('customer', 'stats', 'sales', 'accounts', 'payments', 'points', 'credits', 'preferred', 'usedCoupons', 'emails', 'products', 'timeline'));
+        $walletEntries = $this->t->query('wallet_entries')->where('customer_id', $id)->orderByDesc('id')->get();
+
+        return view('customer', compact('walletEntries', 'customer', 'stats', 'sales', 'accounts', 'payments', 'points', 'credits', 'preferred', 'usedCoupons', 'emails', 'products', 'timeline'));
     }
 
     public function privacy(Request $r, int $id)

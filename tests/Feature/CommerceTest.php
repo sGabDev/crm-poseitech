@@ -5,12 +5,15 @@ namespace Tests\Feature;
 use App\Models\Company;
 use App\Models\Plan;
 use App\Models\User;
+use App\Services\CashFlow;
 use App\Services\Commerce;
 use App\Services\Tenant;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Mail\Mailer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -44,6 +47,153 @@ class CommerceTest extends TestCase
     {
         return array_replace(['request_key' => (string) Str::uuid(), 'customer_id' => $this->customer, 'items' => [['product_id' => $this->product, 'quantity' => 2]], 'discount' => '0', 'extra' => '0',
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
+    }
+
+    public function test_flow_carries_prior_month_and_keeps_payment_and_later_refund_in_correct_months(): void
+    {
+        $this->travelTo(Carbon::parse('2026-08-20 12:00:00', $this->company->timezone));
+        $this->post('/sales', $this->sale(['auto_payment' => 1]))->assertSessionHasNoErrors();
+        $id = DB::table('sales')->value('id');
+        $this->travelTo(Carbon::parse('2026-09-02 12:00:00', $this->company->timezone));
+        $this->post('/cash', ['action' => 'open', 'amount' => '0'])->assertSessionHasNoErrors();
+        $this->post('/sales/'.$id.'/cancel', ['reason' => 'Devolução posterior'])->assertSessionHasNoErrors();
+        $flow = app(CashFlow::class);
+        $august = $flow->month('2026-08');
+        $september = $flow->month('2026-09');
+        $this->assertSame(20000, $august['closing']);
+        $this->assertSame(20000, $september['opening']);
+        $this->assertSame(0, $september['incoming']);
+        $this->assertSame(20000, $september['outgoing']);
+        $this->assertSame(0, $september['closing']);
+        $this->travelBack();
+    }
+
+    public function test_new_operations_are_scoped_to_company_and_permissions(): void
+    {
+        $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra empresa', 'slug' => 'isolada', 'modules' => []]);
+        $foreignCustomer = DB::table('customers')->insertGetId(['company_id' => $other->id, 'name' => 'Cliente externo']);
+        $foreignUser = User::factory()->create(['company_id' => $other->id]);
+        $foreignMail = DB::table('email_logs')->insertGetId(['company_id' => $other->id, 'recipient' => 'externo@example.test', 'subject' => 'Externo', 'body' => 'Externo']);
+        $this->post('/customer-deposits', ['customer_id' => $foreignCustomer, 'amount' => '10', 'method' => 'pix', 'request_key' => (string) Str::uuid()])->assertNotFound();
+        $this->post('/staff/'.$foreignUser->id.'/action', ['action' => 'delete'])->assertNotFound();
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test']]);
+        $this->post('/settings/mail', ['action' => 'send', 'id' => $foreignMail])->assertNotFound();
+        $staff = User::factory()->create(['company_id' => $this->company->id, 'permissions' => ['cash.read']]);
+        $this->actingAs($staff)->post('/settings/mail', ['action' => 'clear'])->assertForbidden();
+        $this->post('/staff/'.$this->owner->id.'/action', ['action' => 'delete'])->assertForbidden();
+        $this->post('/cash-flow', ['direction' => 'out', 'amount' => '10', 'method' => 'pix', 'category' => 'Teste', 'description' => 'Teste', 'request_key' => (string) Str::uuid()])->assertForbidden();
+        $this->assertSame(0, DB::table('customer_deposits')->count());
+        $this->assertDatabaseHas('email_logs', ['id' => $foreignMail, 'status' => 'pending']);
+    }
+
+    public function test_mail_retry_all_requeues_failed_and_processes_pending_without_sending_cancelled(): void
+    {
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'encryption' => 'tls', 'from' => 'loja@example.test', 'from_name' => 'Loja']]);
+        $t = app(Tenant::class);
+        $id = $t->insert('email_logs', ['recipient' => 'cliente@example.test', 'subject' => 'Falhou', 'body' => 'Mensagem', 'status' => 'failed']);
+        $cancelled = $t->insert('email_logs', ['recipient' => 'cliente@example.test', 'subject' => 'Cancelado', 'body' => 'Mensagem', 'status' => 'cancelled']);
+        $this->post('/settings/mail', ['action' => 'retry'])->assertSessionHas('mail_run', true);
+        $this->assertDatabaseHas('email_logs', ['id' => $id, 'status' => 'pending']);
+        $mailer = \Mockery::mock(Mailer::class);
+        $mailer->shouldReceive('send')->once()->andThrow(new \RuntimeException('SMTP indisponível'));
+        Mail::shouldReceive('build')->once()->andReturn($mailer);
+        $this->postJson('/settings/mail', ['action' => 'process'])->assertOk()->assertJson(['processed' => true, 'status' => 'failed']);
+        $this->postJson('/settings/mail', ['action' => 'process'])->assertOk()->assertJson(['processed' => false]);
+        $this->assertDatabaseHas('email_logs', ['id' => $cancelled, 'status' => 'cancelled', 'attempts' => 0]);
+    }
+
+    public function test_deposit_pays_debt_keeps_excess_and_wallet_sale_does_not_double_cash_flow(): void
+    {
+        $this->post('/cash', ['action' => 'open', 'amount' => '100'])->assertSessionHasNoErrors();
+        $this->post('/sales', $this->sale())->assertSessionHasNoErrors();
+        $deposit = ['customer_id' => $this->customer, 'amount' => '200', 'method' => 'pix', 'request_key' => (string) Str::uuid()];
+        $this->post('/customer-deposits', $deposit)->assertSessionHasNoErrors();
+        $this->post('/customer-deposits', $deposit)->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::table('customer_deposits')->count());
+        $this->assertSame(15000, (int) DB::table('accounts')->sum('paid'));
+        $this->assertSame(5000, (int) DB::table('wallet_entries')->sum('amount'));
+        $this->post('/sales', $this->sale(['auto_payment' => 1, 'use_balance' => 1, 'payments' => [['method' => 'pix', 'amount' => '0']]]))->assertSessionHasNoErrors();
+        $second = DB::table('sales')->orderByDesc('id')->first();
+        $this->assertSame(5000, $second->wallet_used);
+        $this->assertSame(20000, $second->paid);
+        $this->assertSame(0, (int) DB::table('wallet_entries')->sum('amount'));
+        $month = now($this->company->timezone)->format('Y-m');
+        $flow = app(CashFlow::class)->month($month);
+        $this->assertSame(40000, $flow['incoming']);
+        $this->assertSame(0, $flow['outgoing']);
+        $this->assertArrayHasKey('Caixa #1', $flow['sources']->all());
+        $this->post('/sales/'.$second->id.'/cancel', ['reason' => 'Cliente desistiu'])->assertSessionHasNoErrors();
+        $this->assertSame(5000, (int) DB::table('wallet_entries')->sum('amount'));
+        $withdraw = ['direction' => 'out', 'amount' => '20', 'method' => 'pix', 'category' => 'Retirada', 'description' => 'Retirada do proprietário', 'request_key' => (string) Str::uuid()];
+        $this->post('/cash-flow', $withdraw)->assertSessionHasNoErrors();
+        $this->post('/cash-flow', $withdraw)->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::table('flow_entries')->count());
+        $flow = app(CashFlow::class)->month($month);
+        $this->assertSame(17000, $flow['outgoing']);
+        $this->assertSame(23000, $flow['closing']);
+        $this->get('/cash-flow?month='.$month)->assertOk()->assertSee('Caixa #1')->assertSee('Retirada do proprietário');
+        $this->get('/cash-flow?month='.$month.'&export=csv')->assertDownload('fluxo-'.$month.'.csv');
+        $this->get('/customers/'.$this->customer)->assertOk()->assertSee('Saldo da conta');
+    }
+
+    public function test_deposit_partial_debt_and_failed_cash_deposit_are_atomic(): void
+    {
+        $this->post('/sales', $this->sale())->assertSessionHasNoErrors();
+        $d = ['customer_id' => $this->customer, 'amount' => '20', 'method' => 'cash', 'request_key' => (string) Str::uuid()];
+        $this->post('/customer-deposits', $d)->assertSessionHasErrors();
+        $this->assertSame(0, DB::table('customer_deposits')->count());
+        $this->assertSame(0, (int) DB::table('accounts')->sum('paid'));
+        $this->post('/customer-deposits', array_replace($d, ['method' => 'pix']))->assertSessionHasNoErrors();
+        $this->assertSame(2000, (int) DB::table('accounts')->sum('paid'));
+        $this->assertSame(0, DB::table('wallet_entries')->count());
+        $this->assertSame(1, DB::table('sales')->count());
+    }
+
+    public function test_percentage_adjustments_and_manually_received_amount_are_preserved(): void
+    {
+        $this->post('/sales', $this->sale(['discount' => '10%', 'extra' => '5%', 'auto_payment' => 0, 'payments' => [['method' => 'pix', 'amount' => '10']]]))->assertSessionHasNoErrors();
+        $sale = DB::table('sales')->first();
+        $this->assertSame(2000, $sale->discount);
+        $this->assertSame(1000, $sale->extra);
+        $this->assertSame(19000, $sale->total);
+        $this->assertSame(1000, $sale->paid);
+        $this->assertSame(18000, $sale->fiado_amount);
+        $this->assertSame(1250, Commerce::adjustment('12,50', 20000));
+        $this->post('/sales', $this->sale(['discount' => '101%']))->assertSessionHasErrors();
+    }
+
+    public function test_staff_deactivation_deletion_and_last_admin_protection(): void
+    {
+        $staff = User::factory()->create(['company_id' => $this->company->id, 'role' => 'staff']);
+        $this->post('/staff/'.$staff->id.'/action', ['action' => 'deactivate'])->assertSessionHasNoErrors();
+        $this->assertFalse($staff->fresh()->active);
+        $this->post('/staff/'.$staff->id.'/action', ['action' => 'activate'])->assertSessionHasNoErrors();
+        $this->assertTrue($staff->fresh()->active);
+        $this->post('/staff/'.$staff->id.'/action', ['action' => 'delete'])->assertSessionHasNoErrors();
+        $this->assertNotNull($staff->fresh()->deleted_at);
+        $this->assertFalse($staff->fresh()->active);
+        $this->post('/staff/'.$staff->id.'/action', ['action' => 'activate'])->assertNotFound();
+        $this->post('/staff/'.$this->owner->id.'/action', ['action' => 'delete'])->assertSessionHasErrors();
+        $this->assertTrue($this->owner->fresh()->active);
+        $this->get('/settings')->assertOk()->assertDontSee($staff->email);
+    }
+
+    public function test_mail_queue_manual_send_does_not_resend_and_clear_preserves_sent(): void
+    {
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'encryption' => 'tls', 'from' => 'loja@example.test', 'from_name' => 'Loja']]);
+        $t = app(Tenant::class);
+        $id = $t->insert('email_logs', ['recipient' => 'cliente@example.test', 'subject' => 'Teste', 'body' => 'Mensagem']);
+        $mailer = \Mockery::mock(Mailer::class);
+        $mailer->shouldReceive('send')->once();
+        Mail::shouldReceive('build')->once()->andReturn($mailer);
+        $this->post('/settings/mail', ['action' => 'send', 'id' => $id])->assertSessionHasNoErrors();
+        $this->post('/settings/mail', ['action' => 'send', 'id' => $id])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('email_logs', ['id' => $id, 'status' => 'sent', 'attempts' => 1]);
+        $pending = $t->insert('email_logs', ['recipient' => 'cliente@example.test', 'subject' => 'Pendente', 'body' => 'Mensagem']);
+        $this->post('/settings/mail', ['action' => 'clear'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('email_logs', ['id' => $pending, 'status' => 'cancelled']);
+        $this->assertDatabaseHas('email_logs', ['id' => $id, 'status' => 'sent']);
+        $this->postJson('/settings/mail', ['action' => 'process'])->assertOk()->assertJson(['processed' => false]);
     }
 
     public function test_team_creation_and_product_page_work_after_upgrade(): void

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountOperationsController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BusinessController;
@@ -39,6 +40,11 @@ Route::middleware(['auth', 'can:platform'])->group(function () {
     Route::post('/admin/settings', [AdminController::class, 'settings']);
 });
 Route::middleware(['auth', 'company'])->group(function () {
+    Route::post('/customer-deposits', [AccountOperationsController::class, 'deposit']);
+    Route::get('/cash-flow', [AccountOperationsController::class, 'flow']);
+    Route::post('/cash-flow', [AccountOperationsController::class, 'flowEntry']);
+    Route::post('/staff/{id}/action', [SettingsController::class, 'staffAction'])->whereNumber('id');
+    Route::post('/settings/mail', [SettingsController::class, 'mailAction']);
     Route::get('/dashboard', [BusinessController::class, 'dashboard']);
     Route::get('/opportunities', [BusinessController::class, 'opportunities']);
     Route::get('/search', [BusinessController::class, 'search']);

@@ -69,7 +69,9 @@ class PortalController extends Controller
         $points = $this->t->query('loyalty_transactions')->where('customer_id', $customer->id)->sum('points');
         $credits = $this->t->query('customer_credits')->where('customer_id', $customer->id)->orderByDesc('id')->get();
 
-        return view('portal', compact('company', 'customer', 'sales', 'totals', 'items', 'accounts', 'payments', 'ledger', 'points', 'credits'));
+        $walletEntries = $this->t->query('wallet_entries')->where('customer_id', $customer->id)->orderByDesc('id')->get();
+
+        return view('portal', compact('walletEntries', 'company', 'customer', 'sales', 'totals', 'items', 'accounts', 'payments', 'ledger', 'points', 'credits'));
     }
 
     public function logout(Request $r)

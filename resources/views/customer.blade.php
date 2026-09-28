@@ -77,6 +77,7 @@
 
 </div>
 
+@include('components.wallet')
 @include('components.credits')
 @include('components.customer-extra')
 @endsection
