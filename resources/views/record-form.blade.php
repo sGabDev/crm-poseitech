@@ -16,6 +16,7 @@
 <input type="checkbox" name="{{ $key }}" value="1" @checked(old($key,$record->$key ?? ($key==='active')))>
 <span>Sim</span>
 </span>
+@elseif($f[1]==='product')<select name="{{ $key }}"><option value="">Selecione o produto</option>@foreach($products as $product)<option value="{{ $product->id }}" @selected((string)$value===(string)$product->id)>{{ $product->name }}</option>@endforeach</select>
 @elseif($f[1]==='customer')<select name="{{ $key }}">
 <option value="">Qualquer cliente</option>@foreach($customers as $c)<option value="{{ $c->id }}" @selected((string)$value===(string)$c->id)>{{ $c->name }}</option>@endforeach</select>
 @elseif(str_starts_with($f[1],'select:'))<select name="{{ $key }}">@foreach(explode(',',substr($f[1],7)) as $option)@php([$v,$l]=explode('=',$option))<option value="{{ $v }}" @selected((string)$value===$v)>{{ $l }}</option>@endforeach</select>

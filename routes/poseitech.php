@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BusinessController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\CatalogController;
+use App\Http\Controllers\CouponController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ResourceController;
 use App\Http\Controllers\SettingsController;
@@ -64,6 +65,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/customers/{id}/credits', [BusinessController::class, 'creditAdjustment'])->whereNumber('id');
     Route::get('/sales', [BusinessController::class, 'sales']);
     Route::get('/sales/new', [BusinessController::class, 'saleForm']);
+    Route::post('/coupons/preview', [CouponController::class, 'preview']);
     Route::post('/sales', [BusinessController::class, 'sell']);
     Route::get('/sales/{id}', [BusinessController::class, 'sale'])->whereNumber('id');
     Route::post('/sales/{id}/cancel', [BusinessController::class, 'cancel'])->whereNumber('id');

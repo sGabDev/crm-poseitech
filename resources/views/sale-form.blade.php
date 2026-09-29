@@ -10,7 +10,7 @@
     </div>
     <div class="filters"><label>Tipo de operação<select id="operation-type"><option value="sale">Venda de produtos ou serviços</option><option value="deposit" @selected(old('operation')==='deposit')>Depósito na conta do cliente (não é venda)</option></select></label></div>
     @include('components.deposit-form')
-    <form method="post" action="{{ url('/sales') }}" id="sale-form" data-stock="{{ $company->enabled('stock') ? 1 : 0 }}" data-currency="{{ $company->currency }}">@csrf<input
+    <form method="post" action="{{ url('/sales') }}" id="sale-form" data-coupon-url="{{ url('/coupons/preview') }}" data-stock="{{ $company->enabled('stock') ? 1 : 0 }}" data-currency="{{ $company->currency }}">@csrf<input
             type="hidden" name="request_key" value="{{ old('request_key', (string) \Illuminate\Support\Str::uuid()) }}">
         <input type="hidden" name="catalog_order_id" value="{{ old('catalog_order_id') }}">@if(old('catalog_order_id'))<p class="notice">Pedido online #{{ old('catalog_order_id') }}: confira o cliente, os valores atuais e o pagamento antes de concluir.</p>@endif<div class="grid wide-left">
             <div>
@@ -107,7 +107,7 @@
                     </label><small class="muted">Digite 10,00 para um valor em dinheiro ou 10% para um percentual do subtotal.</small>@if($company->enabled('loyalty'))<label>Cupom<input name="coupon" value="{{ old('coupon') }}"
                                 placeholder="Código do cupom">
                         </label>
-                    <small class="muted">O cupom será validado ao concluir.</small>@endif<div class="metric-row total">
+                    <p id="coupon-feedback" class="notice" role="status" hidden></p><div id="coupon-summary" class="metric-row" hidden><span>Benefício do cupom</span><strong id="coupon-discount"></strong></div>@endif<div class="metric-row total">
                         <span>Total estimado</span>
                         <strong id="sale-total">R$ 0,00</strong>
                     </div>

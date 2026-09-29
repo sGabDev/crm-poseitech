@@ -21,7 +21,13 @@ class CouponRewards
             $mail = null;
             if (filter_var($customer->email, FILTER_VALIDATE_EMAIL)) {
                 $benefit = $coupon->type === 'percent' ? number_format($coupon->value / 100, 2, ',', '.').'%' : Tenant::money($coupon->value);
-                $mail = $this->t->insert('email_logs', ['customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Você ganhou um cupom · '.$this->t->company->name, 'body' => 'Olá, '.$customer->name.'! Sua compra #'.$sale.' liberou o cupom '.$coupon->code.'. Ganhe '.$benefit.' de desconto em uma próxima compra, sem valor mínimo. Válido até '.Carbon::parse($coupon->expires_at)->format('d/m/Y').'. Uso único por cliente, sujeito ao limite de usos da campanha. Informe o código no atendimento.']);
+                if ($coupon->type === 'product') {
+                    $product = $this->t->query('products')->where('id', $coupon->product_id)->whereNull('deleted_at')->where('active', true)->first();
+                    if (! $product) {
+                        continue;
+                    } $benefit = 'uma unidade grátis de '.$product->name.' (adicionais cobrados)';
+                }
+                $mail = $this->t->insert('email_logs', ['customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Você ganhou um cupom · '.$this->t->company->name, 'body' => 'Olá, '.$customer->name.'! Sua compra #'.$sale.' liberou o cupom '.$coupon->code.'. Ganhe '.$benefit.' em uma próxima compra, sem valor mínimo. Válido até '.Carbon::parse($coupon->expires_at)->format('d/m/Y').'. Uso único por cliente, sujeito ao limite de usos da campanha. Informe o código no atendimento.']);
             }
             $this->t->insert('coupon_grants', ['coupon_id' => $coupon->id, 'customer_id' => $customer->id, 'earned_sale_id' => $sale, 'email_log_id' => $mail]);
         }

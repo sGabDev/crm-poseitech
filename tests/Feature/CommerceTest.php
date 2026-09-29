@@ -55,6 +55,68 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_live_coupon_preview_and_free_product_match_checkout(): void
+    {
+        $this->post('/records/coupons', ['code' => 'BRINDE', 'type' => 'product', 'product_id' => $this->product, 'value' => 0, 'minimum' => 0, 'max_uses' => 10, 'expires_at' => today()->addMonth()->toDateString(), 'active' => 1])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('coupons', ['code' => 'BRINDE', 'product_id' => $this->product, 'type' => 'product']);
+        DB::table('products')->where('id', $this->product)->update(['addons' => json_encode([['name' => 'Extra', 'price' => 2500]])]);
+        $data = $this->sale(['coupon' => 'BRINDE', 'items' => [['product_id' => $this->product, 'quantity' => 2, 'addons' => [0]]], 'auto_payment' => 1]);
+        $this->postJson('/coupons/preview', $data)->assertOk()->assertJsonPath('type', 'product')->assertJsonPath('discount', 10000);
+        $this->assertSame(0, DB::table('coupons')->value('uses'));
+        $this->post('/sales', $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sales', ['subtotal' => 25000, 'discount' => 10000, 'total' => 15000]);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 8]);
+        $this->postJson('/coupons/preview', array_replace($data, ['items' => [['name' => 'Outro', 'price' => '20', 'quantity' => 1]]]))->assertUnprocessable();
+        DB::table('coupons')->where('code', 'BRINDE')->update(['expires_at' => today()->subDay()->toDateString()]);
+        $this->postJson('/coupons/preview', $data)->assertUnprocessable();
+        $this->get('/records/coupons')->assertOk()->assertSee('Vencido');
+    }
+
+    public function test_live_percentage_preview_does_not_consume_coupon_and_revalidates_on_sale(): void
+    {
+        app(Tenant::class)->insert('coupons', ['code' => 'DEZPREVIEW', 'type' => 'percent', 'value' => 1000, 'minimum' => 0, 'max_uses' => 1, 'expires_at' => today()->addDay()->toDateString(), 'active' => true]);
+        $data = $this->sale(['coupon' => 'DEZPREVIEW', 'auto_payment' => 1]);
+        $this->postJson('/coupons/preview', $data)->assertOk()->assertJsonPath('discount', 2000);
+        $this->assertSame(0, DB::table('coupons')->value('uses'));
+        DB::table('coupons')->update(['active' => false]);
+        $this->post('/sales', $data)->assertSessionHasErrors();
+        $this->assertSame(0, DB::table('sales')->count());
+    }
+
+    public function test_catalog_link_can_only_be_changed_by_support(): void
+    {
+        $this->post('/settings', ['section' => 'catalog_link', 'slug' => 'nova-vitrine'])->assertForbidden();
+        $this->assertSame('empresa-a', $this->company->fresh()->slug);
+        $support = User::factory()->create(['role' => 'super', 'active' => true]);
+        $this->actingAs($support)->withSession(['support_company' => $this->company->id]);
+        $this->post('/settings', ['section' => 'catalog_link', 'slug' => 'nova-vitrine'])->assertSessionHasNoErrors();
+        $this->assertSame('nova-vitrine', $this->company->fresh()->slug);
+        $this->get('/catalog/nova-vitrine')->assertOk();
+        $this->get('/catalog/empresa-a')->assertNotFound();
+        $this->post('/settings', ['section' => 'catalog_link', 'slug' => '../invalid'])->assertSessionHasErrors('slug');
+    }
+
+    public function test_catalog_history_is_private_and_tracks_order_and_sale_cancellation(): void
+    {
+        $token = str_repeat('b', 64);
+        $this->withCookie('catalog_visitor_'.$this->company->id, $token);
+        $this->company->update(['settings' => ['catalog_checkout' => true]]);
+        $data = ['request_key' => (string) Str::uuid(), 'name' => 'Cliente privado', 'phone' => '11999999999', 'address' => 'Endereco exclusivo historico', 'items' => [['product_id' => $this->product, 'quantity' => 1]]];
+        $this->post('/catalog/empresa-a', $data)->assertSessionHasNoErrors();
+        $order = DB::table('catalog_orders')->first();
+        $this->get('/catalog/empresa-a')->assertOk()->assertSee('Endereco exclusivo historico')->assertSee('Aguardando confirmação')->assertHeader('Cache-Control', 'no-store, private');
+        $this->withCookie('catalog_visitor_'.$this->company->id, str_repeat('c', 64));
+        $this->get('/catalog/empresa-a')->assertOk()->assertDontSee('Endereco exclusivo historico');
+        $this->post('/catalog/empresa-a', $data)->assertNotFound();
+        $this->withCookie('catalog_visitor_'.$this->company->id, $token);
+        $this->post('/sales', $this->sale(['catalog_order_id' => $order->id, 'auto_payment' => 1]))->assertSessionHasNoErrors();
+        $saleId = DB::table('catalog_orders')->value('sale_id');
+        DB::table('orders')->where('sale_id', $saleId)->update(['status' => 'preparing']);
+        $this->get('/catalog/empresa-a')->assertOk()->assertSee('Registrado')->assertSee(config('poseitech.order_statuses.preparing'));
+        $this->post('/sales/'.$saleId.'/cancel', ['reason' => 'Cliente desistiu'])->assertSessionHasNoErrors();
+        $this->get('/catalog/empresa-a')->assertOk()->assertSee('Cancelado');
+    }
+
     public function test_custom_items_and_explicit_negative_stock_confirmation(): void
     {
         $this->post('/sales', $this->sale(['items' => [['name' => 'Serviço avulso', 'price' => '15.50', 'quantity' => 2]], 'auto_payment' => 1]))->assertSessionHasNoErrors();
@@ -92,6 +154,7 @@ class CommerceTest extends TestCase
 
     public function test_catalog_checkout_validates_prices_stock_and_converts_once(): void
     {
+        $this->withCookie('catalog_visitor_'.$this->company->id, str_repeat('a', 64));
         $this->company->update(['settings' => ['catalog_checkout' => true]]);
         $payload = ['request_key' => (string) Str::uuid(), 'name' => 'Comprador online', 'phone' => '+55 (11) 99999-9999', 'address' => 'Rua do cliente, 123', 'items' => [['product_id' => $this->product, 'quantity' => 2, 'price' => 1]]];
         $this->get('/catalog/empresa-a')->assertOk()->assertSee('Enviar pedido à loja');

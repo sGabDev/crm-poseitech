@@ -64,6 +64,12 @@ class SettingsController extends Controller
                 throw ValidationException::withMessages(['modules' => 'Feche o caixa antes de desativar o módulo.']);
             }
             $company->update(['modules' => $modules]);
+        } elseif ($section === 'catalog_link') {
+            Gate::authorize('platform');
+            $d = $r->validate(['slug' => ['required', 'string', 'min:3', 'max:80', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', Rule::unique('companies', 'slug')->ignore($company->id)]]);
+            $before = $company->slug;
+            $company->update($d);
+            $this->t->audit('catalog.link_changed', 'companies', $company->id, ['slug' => $before], $d);
         } elseif ($section === 'catalog') {
             $this->t->authorize('catalog', true);
             $d = $r->validate(['catalog_title' => 'nullable|string|max:120', 'catalog_description' => 'nullable|string|max:1000', 'catalog_color' => 'required|regex:/^#[a-fA-F0-9]{6}$/', 'catalog_checkout' => 'nullable|boolean']);

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 class Element {
  constructor(){this.events={};this.children=[];this.value='';this.dataset={};}
- addEventListener(name, fn){this.events[name]=fn;}
+ addEventListener(name, fn){const previous=this.events[name];this.events[name]=event=>{previous?.(event);fn(event);};}
  append(...children){this.children.push(...children);}
  replaceChildren(){this.children=[];}
  setCustomValidity(message){this.validationMessage=message;}
@@ -60,3 +60,24 @@ customToggle.checked=false;nodes['#barcode'].value='789123';nodes['#barcode'].ev
 nodes['#barcode'].value='unknown';nodes['#barcode'].events.keydown({key:'Enter',preventDefault(){},target:nodes['#barcode']});assert.equal(quantity.value,5);
 quantity.value='12';let prevented=false;form.events.submit({preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.equal(nodes['#allow-negative-stock'].value,'0');
 console.log('Item avulso, saldo atual, leitor com quantidade e recusa de estoque negativo: OK');
+
+(async()=>{
+ const previewNodes={...nodes};
+ for(const id of ['coupon-feedback','coupon-summary','coupon-discount'])previewNodes['#'+id]=new Element();
+ const previewForm=new Element();previewForm.dataset={currency:'BRL',couponUrl:'/coupons/preview'};
+ const couponInput=new Element();couponInput.value='TESTE';couponInput.matches=()=>false;
+ previewForm.querySelectorAll=form.querySelectorAll;
+ previewForm.querySelector=selector=>selector==='[name=coupon]'?couponInput:form.querySelector(selector);
+ previewNodes['#sale-form']=previewForm;
+ quantity.value='2';customToggle.checked=false;saleCustomer.selectedOptions[0].dataset.wallet='0';paymentMethod.value='pix';
+ previewNodes['#discount'].value='0';previewNodes['#extra'].value='0';previewNodes['#auto-payment'].value='1';
+ let scheduled;let result={ok:true,json:async()=>({discount:2000,label:'Desconto validado'})};
+ const previewDocument={querySelector:selector=>previewNodes[selector]||null,querySelectorAll:saleDocument.querySelectorAll};
+ vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{document:previewDocument,Intl,setTimeout:fn=>(scheduled=fn,1),clearTimeout(){},fetch:async()=>result,FormData:class{},confirm:()=>false});
+ let blocked=false;previewForm.events.submit({preventDefault(){blocked=true;}});assert.equal(blocked,true);
+ await scheduled();assert.match(previewNodes['#sale-total'].textContent,/180,00/);assert.equal(received.value,'180.00');assert.equal(previewNodes['#coupon-summary'].hidden,false);
+ result={ok:false,json:async()=>({errors:{coupon:['Cupom vencido']}})};
+ previewForm.events.input({target:couponInput});await scheduled();assert.equal(previewNodes['#coupon-feedback'].textContent,'Cupom vencido');assert.match(previewNodes['#sale-total'].textContent,/200,00/);
+ blocked=false;previewForm.events.submit({preventDefault(){blocked=true;}});assert.equal(blocked,true);
+ console.log('Cupom em tempo real: desconto, pagamento recalculado e bloqueio durante validação/falha: OK');
+})().catch(error=>{console.error(error);process.exitCode=1;});

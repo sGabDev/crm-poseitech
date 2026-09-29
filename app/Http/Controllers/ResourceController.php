@@ -38,13 +38,29 @@ class ResourceController extends Controller
         if ($r->filled('q')) {
             $q->where(isset($spec['fields']['name']) ? 'name' : 'code', 'like', '%'.mb_substr($r->string('q'), 0, 100).'%');
         }
+        if ($resource === 'coupons') {
+            $today = now($this->t->company->timezone)->toDateString();
+            if ($r->input('status') === 'expired') {
+                $q->where('expires_at', '<', $today);
+            }
+            if ($r->input('status') === 'inactive') {
+                $q->where('active', false);
+            }
+            if ($r->input('status') === 'used') {
+                $q->where('uses', '>', 0);
+            }
+            if ($r->input('status') === 'active') {
+                $q->where('active', true)->whereDate('expires_at', '>=', $today)->whereColumn('uses', '<', 'max_uses');
+            }
+        }
+        $couponProducts = $resource === 'coupons' ? $this->t->query('products')->pluck('name', 'id') : collect();
         $records = $q->orderByDesc('id')->paginate(20)->withQueryString();
 
         $grants = $resource === 'coupons' ? $this->t->query('coupon_grants')->join('coupons', 'coupons.id', '=', 'coupon_grants.coupon_id')->join('customers', 'customers.id', '=', 'coupon_grants.customer_id')->leftJoin('email_logs', 'email_logs.id', '=', 'coupon_grants.email_log_id')->select('coupon_grants.*', 'coupons.code', 'customers.name', 'email_logs.status as mail_status', 'email_logs.sent_at')->orderByDesc('coupon_grants.id')->paginate(20, ['*'], 'grants_page') : collect();
 
         $couponUses = $resource === 'coupons' ? $this->t->query('sales')->join('coupons', 'coupons.id', '=', 'sales.coupon_id')->leftJoin('customers', 'customers.id', '=', 'sales.customer_id')->select('sales.id', 'sales.status', 'sales.created_at', 'coupons.code', 'customers.name')->orderByDesc('sales.id')->paginate(20, ['*'], 'uses_page') : collect();
 
-        return view('records', compact('resource', 'spec', 'records', 'grants', 'couponUses'));
+        return view('records', compact('resource', 'spec', 'records', 'grants', 'couponUses', 'couponProducts'));
     }
 
     public function form(string $resource, ?int $id = null)
@@ -54,7 +70,9 @@ class ResourceController extends Controller
         abort_if(in_array($resource, ['products', 'coupons']) && $record?->deleted_at, 404);
         $customers = $resource === 'coupons' ? $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->limit(1000)->get() : collect();
 
-        return view('record-form', compact('resource', 'spec', 'record', 'customers'));
+        $products = $resource === 'coupons' ? $this->t->query('products')->whereNull('deleted_at')->where('active', true)->orderBy('name')->get() : collect();
+
+        return view('record-form', compact('resource', 'spec', 'record', 'customers', 'products'));
     }
 
     public function save(Request $r, string $resource, ?int $id = null)
@@ -81,6 +99,16 @@ class ResourceController extends Controller
         }
         if ($resource === 'coupons') {
             $d['code'] = Str::upper($d['code']);
+            if ($d['type'] === 'product') {
+                $gift = $this->t->find('products', $d['product_id']);
+                abort_unless($gift->active && ! $gift->deleted_at, 422);
+                $d['value'] = 0;
+            } else {
+                $d['product_id'] = null;
+                if ($d['value'] <= 0) {
+                    throw ValidationException::withMessages(['value' => 'Informe um desconto maior que zero.']);
+                }
+            }
             if ($d['type'] === 'percent' && $d['value'] > 10000) {
                 throw ValidationException::withMessages(['value' => 'Percentual máximo: 100%.']);
             }
@@ -100,7 +128,7 @@ class ResourceController extends Controller
             $d['phone'] = $d['whatsapp'] = $digits === '' ? null : $phone;
             $d['consented_at'] = now();
         }
-        if (in_array($resource, ['products', 'coupons'])) {
+        if ($resource === 'products') {
             $addons = [];
             foreach (preg_split('/\R/', trim($d['addons'] ?? '')) as $line) {
                 if (trim($line) === '') {

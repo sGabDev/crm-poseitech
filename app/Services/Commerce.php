@@ -17,6 +17,71 @@ class Commerce
         throw ValidationException::withMessages(['operation' => $message]);
     }
 
+    public function quote(array $d, ?object $customer = null): array
+    {
+        $items = [];
+        $subtotal = 0;
+        $cost = 0;
+        foreach ($d['items'] as $line) {
+            if (empty($line['product_id'])) {
+                if (! trim($line['name'] ?? '') || Tenant::cents($line['price'] ?? 0) <= 0) {
+                    $this->fail('Informe nome e valor do item avulso.');
+                }
+                $p = (object) ['id' => null, 'name' => trim($line['name']), 'price' => Tenant::cents($line['price']), 'cost' => 0, 'type' => 'service', 'active' => true, 'addons' => '[]'];
+            } else {
+                $p = $this->t->find('products', $line['product_id']);
+            }
+            if (! $p->active) {
+                $this->fail('Produto inativo.');
+            }
+            $qty = (int) $line['quantity'];
+            $addons = json_decode($p->addons ?? '[]', true);
+            $chosen = array_values(array_unique($line['addons'] ?? []));
+            sort($chosen);
+            $addonPrice = 0;
+            $names = [];
+            foreach ($chosen as $key) {
+                if (! isset($addons[$key])) {
+                    $this->fail('Adicional inválido.');
+                }$addonPrice += $addons[$key]['price'];
+                $names[] = $addons[$key]['name'];
+            }
+            $p->price += $addonPrice;
+            $itemKey = ($p->id ?? 'custom-'.count($items)).':'.implode(',', $chosen);
+            $items[$itemKey] = ['p' => $p, 'addons' => implode(', ', $names), 'quantity' => ($items[$itemKey]['quantity'] ?? 0) + $qty];
+        }
+        foreach ($items as $line) {
+            $subtotal += $line['p']->price * $line['quantity'];
+            $cost += $line['p']->cost * $line['quantity'];
+        }
+        $discount = self::adjustment($d['discount'] ?? 0, $subtotal);
+        $extra = self::adjustment($d['extra'] ?? 0, $subtotal);
+        $coupon = null;
+        $grant = null;
+        if (! empty($d['coupon'])) {
+            $this->t->authorize('loyalty', true);
+            $coupon = $this->t->query('coupons')->whereNull('deleted_at')->where('code', Str::upper($d['coupon']))->first();
+            if (! $coupon || ! $coupon->active || $coupon->expires_at < now()->toDateString() || $coupon->uses >= $coupon->max_uses || ($coupon->customer_id && $coupon->customer_id !== $customer?->id)) {
+                $this->fail('Cupom inválido para esta compra.');
+            }
+            $grant = $customer ? $this->t->query('coupon_grants')->where('coupon_id', $coupon->id)->where('customer_id', $customer->id)->whereNull('used_sale_id')->whereNull('revoked_at')->first() : null;
+            if ($coupon->minimum > 0 && ! $grant) {
+                $this->fail('Este cliente ainda não ganhou este cupom ou já utilizou o benefício.');
+            }
+            $benefit = $coupon->type === 'percent' ? (int) round($subtotal * $coupon->value / 10000) : $coupon->value;
+            if ($coupon->type === 'product') {
+                $gift = $this->t->query('products')->where('id', $coupon->product_id)->whereNull('deleted_at')->where('active', true)->first();
+                if (! $gift || ! collect($items)->contains(fn ($line) => $line['p']->id === $gift->id)) {
+                    $this->fail('Adicione o produto do cupom à venda para liberar uma unidade grátis.');
+                }
+                $benefit = $gift->price;
+            }
+            $discount += min(max(0, $subtotal - $discount), $benefit);
+        }
+
+        return compact('items', 'subtotal', 'cost', 'discount', 'extra', 'coupon', 'grant');
+    }
+
     public function sell(array $d): int
     {
         $this->t->authorize('sales', true);
@@ -42,56 +107,7 @@ class Commerce
             if ($customer?->anonymized_at) {
                 $this->fail('Cliente anonimizado.');
             }
-            $items = [];
-            $subtotal = 0;
-            $cost = 0;
-            foreach ($d['items'] as $line) {
-                if (empty($line['product_id'])) {
-                    if (! trim($line['name'] ?? '') || Tenant::cents($line['price'] ?? 0) <= 0) {
-                        $this->fail('Informe nome e valor do item avulso.');
-                    }
-                    $p = (object) ['id' => null, 'name' => trim($line['name']), 'price' => Tenant::cents($line['price']), 'cost' => 0, 'type' => 'service', 'active' => true, 'addons' => '[]'];
-                } else {
-                    $p = $this->t->find('products', $line['product_id']);
-                }
-                if (! $p->active) {
-                    $this->fail('Produto inativo.');
-                }
-                $qty = (int) $line['quantity'];
-                $addons = json_decode($p->addons ?? '[]', true);
-                $chosen = array_values(array_unique($line['addons'] ?? []));
-                sort($chosen);
-                $addonPrice = 0;
-                $names = [];
-                foreach ($chosen as $key) {
-                    if (! isset($addons[$key])) {
-                        $this->fail('Adicional inválido.');
-                    }$addonPrice += $addons[$key]['price'];
-                    $names[] = $addons[$key]['name'];
-                }
-                $p->price += $addonPrice;
-                $itemKey = ($p->id ?? 'custom-'.count($items)).':'.implode(',', $chosen);
-                $items[$itemKey] = ['p' => $p, 'addons' => implode(', ', $names), 'quantity' => ($items[$itemKey]['quantity'] ?? 0) + $qty];
-            }
-            foreach ($items as $line) {
-                $subtotal += $line['p']->price * $line['quantity'];
-                $cost += $line['p']->cost * $line['quantity'];
-            }
-            $discount = self::adjustment($d['discount'] ?? 0, $subtotal);
-            $extra = self::adjustment($d['extra'] ?? 0, $subtotal);
-            $coupon = null;
-            if (! empty($d['coupon'])) {
-                $this->t->authorize('loyalty', true);
-                $coupon = $this->t->query('coupons')->whereNull('deleted_at')->where('code', Str::upper($d['coupon']))->first();
-                if (! $coupon || ! $coupon->active || $coupon->expires_at < now()->toDateString() || $coupon->uses >= $coupon->max_uses || ($coupon->customer_id && $coupon->customer_id !== $customer?->id)) {
-                    $this->fail('Cupom inválido para esta compra.');
-                }
-                $grant = $customer ? $this->t->query('coupon_grants')->where('coupon_id', $coupon->id)->where('customer_id', $customer->id)->whereNull('used_sale_id')->whereNull('revoked_at')->first() : null;
-                if ($coupon->minimum > 0 && ! $grant) {
-                    $this->fail('Este cliente ainda não ganhou este cupom ou já utilizou o benefício.');
-                }
-                $discount += min(max(0, $subtotal - $discount), $coupon->type === 'percent' ? (int) round($subtotal * $coupon->value / 10000) : $coupon->value);
-            }
+            extract($this->quote($d, $customer));
             $fee = 0;
             if (! empty($d['order'])) {
                 $this->t->authorize('orders', true);
@@ -375,6 +391,7 @@ class Commerce
             }
             $this->t->query('accounts')->where('sale_id', $id)->update(['status' => 'cancelled', 'updated_at' => now()]);
             $this->t->query('orders')->where('sale_id', $id)->update(['status' => 'cancelled', 'updated_at' => now()]);
+            $this->t->query('catalog_orders')->where('sale_id', $id)->update(['status' => 'cancelled', 'updated_at' => now()]);
             $points = $this->t->query('loyalty_transactions')->where('sale_id', $id)->sum('points');
             if ($points) {
                 $this->t->insert('loyalty_transactions', ['customer_id' => $sale->customer_id, 'sale_id' => $id, 'points' => -$points, 'description' => 'Cancelamento #'.$id]);

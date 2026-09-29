@@ -108,13 +108,20 @@ class PortalController extends Controller
         return view('receipt', ['sale' => $sale, 'company' => $company, 'items' => $this->t->query('sale_items')->where('sale_id', $sale->id)->get(), 'payments' => $this->t->query('payments')->where('sale_id', $sale->id)->get()]);
     }
 
-    public function catalog(string $slug)
+    public function catalog(Request $r, string $slug)
     {
         $company = Company::with('plan')->where('slug', $slug)->firstOrFail();
         abort_unless($company->available() && $company->enabled('catalog'), 404);
         $this->t->company = $company;
 
-        return view('catalog', ['company' => $company, 'products' => $this->t->query('products')->where('active', true)->whereNull('deleted_at')->orderBy('category')->orderBy('name')->get()]);
+        $visitor = CatalogController::visitor($r, $company->id);
+        $history = $this->t->query('catalog_orders')->where('visitor_hash', $visitor)->leftJoin('sales', function ($join) {
+            $join->on('sales.id', '=', 'catalog_orders.sale_id')->on('sales.company_id', '=', 'catalog_orders.company_id');
+        })->leftJoin('orders', function ($join) {
+            $join->on('orders.sale_id', '=', 'catalog_orders.sale_id')->on('orders.company_id', '=', 'catalog_orders.company_id');
+        })->select('catalog_orders.*', 'sales.status as sale_status', 'sales.total as registered_total', 'orders.status as order_status', 'orders.delivery as order_delivery')->orderByDesc('catalog_orders.id')->paginate(10, ['*'], 'history_page')->fragment('catalog-history');
+
+        return response()->view('catalog', ['history' => $history, 'company' => $company, 'products' => $this->t->query('products')->where('active', true)->whereNull('deleted_at')->orderBy('category')->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function image(Request $r, int $companyId, int $productId)

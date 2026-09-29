@@ -6,4 +6,4 @@
 <label>Apresentação<textarea name="catalog_description" maxlength="1000">{{ old('catalog_description',$company->settings['catalog_description'] ?? '') }}</textarea></label>
 <label class="check"><input type="checkbox" name="catalog_checkout" value="1" @checked(old('catalog_checkout',$company->settings['catalog_checkout'] ?? false))>Receber pedidos pelo catálogo</label>
 <p class="muted">O cliente envia o carrinho para conferência da equipe. Frete e pagamento são combinados no atendimento. Logo, endereço e WhatsApp usam os dados da empresa.</p><button>Salvar catálogo</button>
-</form></section>@endif
+</form>@can('platform')<hr><form method="post" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="catalog_link"><label>Link do catálogo (somente suporte)<input name="slug" value="{{ $company->slug }}" required minlength="3" maxlength="80" pattern="[a-z0-9]+(-[a-z0-9]+)*"></label><p>Use letras minúsculas, números e hífens. O link anterior deixará de funcionar; compartilhe o novo com os clientes.</p><button>Alterar link</button></form>@else<p class="muted">Para alterar o link, solicite ao suporte.</p>@endcan</section>@endif

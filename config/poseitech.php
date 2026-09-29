@@ -39,8 +39,9 @@ return [
             'notes' => ['Observações', 'textarea', 'nullable|string|max:3000'],
         ]],
         'coupons' => ['title' => 'Cupons', 'module' => 'loyalty', 'fields' => [
-            'code' => ['Código', 'text', 'required|alpha_dash|max:40'], 'type' => ['Tipo', 'select:fixed=Valor fixo,percent=Percentual', 'required|in:fixed,percent'],
-            'value' => ['Valor em R$ ou percentual', 'money', 'required|numeric|min:0.01|max:99999'],
+            'code' => ['Código', 'text', 'required|alpha_dash|max:40'], 'type' => ['Tipo', 'select:fixed=Valor fixo,percent=Percentual,product=Produto grátis', 'required|in:fixed,percent,product'],
+            'value' => ['Valor em R$ ou percentual (zero para produto grátis)', 'money', 'required|numeric|min:0|max:99999'],
+            'product_id' => ['Produto grátis (uma unidade; adicionais cobrados)', 'product', 'nullable|required_if:type,product|integer'],
             'minimum' => ['Compra mínima para ganhar o cupom (R$)', 'money', 'required|numeric|min:0|max:9999999'],
             'max_uses' => ['Limite de usos', 'number', 'required|integer|min:1|max:1000000'],
             'expires_at' => ['Validade', 'date', 'required|date'], 'customer_id' => ['Cliente exclusivo (opcional)', 'customer', 'nullable|integer'],

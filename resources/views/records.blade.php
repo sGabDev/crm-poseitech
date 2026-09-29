@@ -10,20 +10,21 @@
 <form class="filters">
 <label>Pesquisar<input name="q" value="{{ request('q') }}" placeholder="Nome ou código">
 </label>@if($resource==='customers')<label>Segmento<select name="segment">@foreach(['all'=>'Todos','new'=>'Novos','recurring'=>'Recorrentes','vip'=>'VIP','inactive'=>'Inativos','pending'=>'Com pendências','birthday'=>'Aniversariantes'] as $k=>$v)<option value="{{ $k }}" @selected(request('segment')===$k)>{{ $v }}</option>@endforeach</select>
-</label>@endif<button class="secondary">Filtrar</button>
+</label>@endif @if($resource==='coupons')<label>Status<select name="status">@foreach([''=>'Todos','active'=>'Ativos','expired'=>'Vencidos','used'=>'Já utilizados','inactive'=>'Inativos'] as $key=>$label)<option value="{{ $key }}" @selected(request('status')===$key)>{{ $label }}</option>@endforeach</select></label>@endif<button class="secondary">Filtrar</button>
 </form>
 <section class="card">
 <div class="table-wrap">
 <table>
 <thead>
 <tr>
-<th>Nome / código</th>@foreach(array_slice($spec['fields'],1,3,true) as $key=>$f)<th>{{ $f[0] }}</th>@endforeach<th>Ações</th>
+<th>Nome / código</th>@foreach(array_slice($spec['fields'],1,3,true) as $key=>$f)<th>{{ $f[0] }}</th>@endforeach
+@if($resource==='coupons')<th>Status / validade</th>@endif<th>Ações</th>
 </tr>
 </thead>
 <tbody>@forelse($records as $record)<tr>
 <td>
 <strong>{{ $record->name ?? $record->code }}</strong>
-</td>@foreach(array_slice($spec['fields'],1,3,true) as $key=>$f)<td>@if($f[1]==='money'){{ \App\Services\Tenant::money($record->$key) }}@elseif(str_starts_with($f[1],'select:')){{ collect(explode(',',substr($f[1],7)))->mapWithKeys(fn($o)=>[explode('=',$o)[0]=>explode('=',$o)[1]])[$record->$key] ?? $record->$key }}@else{{ $record->$key ?? '—' }}@endif</td>@endforeach<td>
+</td>@foreach(array_slice($spec['fields'],1,3,true) as $key=>$f)<td>@if($f[1]==='product'){{ $couponProducts[$record->$key] ?? '—' }}@elseif($f[1]==='money'){{ \App\Services\Tenant::money($record->$key) }}@elseif(str_starts_with($f[1],'select:')){{ collect(explode(',',substr($f[1],7)))->mapWithKeys(fn($o)=>[explode('=',$o)[0]=>explode('=',$o)[1]])[$record->$key] ?? $record->$key }}@else{{ $record->$key ?? '—' }}@endif</td>@endforeach @if($resource==='coupons')<td><span class="badge">{{ !$record->active ? 'Inativo' : ($record->expires_at < now($company->timezone)->toDateString() ? 'Vencido' : ($record->uses >= $record->max_uses ? 'Já usado / esgotado' : 'Ativo')) }}</span><small>{{ $record->uses }}/{{ $record->max_uses }} usos · {{ \Carbon\Carbon::parse($record->expires_at)->format('d/m/Y') }}</small></td>@endif<td>
 <div class="actions">@if($resource==='customers')<a href="{{ url('/customers/'.$record->id) }}">Ver perfil</a>@endif @if(auth()->user()->allows($spec['module'],true))<a class="record-action" href="{{ url('/records/'.$resource.'/'.$record->id.'/edit') }}">Editar</a>@if(in_array($resource,['suppliers','goals','products','coupons']))<form method="post" action="{{ url('/records/'.$resource.'/'.$record->id.'/delete') }}" data-confirm="Excluir este cadastro?">@csrf<button class="record-action">Excluir</button></form>@endif
 @endif</div>
 </td>
