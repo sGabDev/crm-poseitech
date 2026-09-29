@@ -30,21 +30,21 @@ console.log('Busca por nome, telefone e CPF; seleção e máscara durante digita
 
 // Exercise the real sale handlers: automatic values must stop overwriting an edit.
 const nodes={};
-for(const id of ['auto-payment','discount','extra','subtotal','sale-total','sale-pending','pending-row','wallet-row','wallet-remaining','reset-payment','add-item','add-payment','use-balance'])nodes['#'+id]=new Element();
+for(const id of ['auto-payment','discount','extra','subtotal','sale-total','sale-pending','pending-row','wallet-row','wallet-remaining','wallet-current','wallet-current-row','barcode','barcode-quantity','barcode-message','allow-negative-stock','reset-payment','add-item','add-payment','use-balance'])nodes['#'+id]=new Element();
 nodes['#auto-payment'].value='1';nodes['#discount'].value='0';nodes['#extra'].value='0';nodes['#use-balance'].checked=true;
-const product={selectedOptions:[{dataset:{price:'10000'}}]};
+const product={value:'1',selectedOptions:[{value:'1',textContent:'Produto A',dataset:{price:'10000',code:'789123',stock:'10',type:'product'}}]};product.options=product.selectedOptions;nodes['#barcode-quantity'].value='3';nodes['#barcode'].focus=()=>{};nodes['#barcode'].select=()=>{};
 const quantity={value:'2'};
-const saleLine={querySelector:s=>s==='.product-select'?product:s==='.quantity'?quantity:null,querySelectorAll:()=>[]};
+const customToggle={checked:false};const customPrice={value:'12.50'};const searchBox=new Element();const addon=new Element();addon.options=[];addon.selectedOptions=[];addon.closest=()=>({});const saleLine={querySelector:s=>s==='.product-select'?product:s==='.quantity'?quantity:s==='.custom-toggle'?customToggle:s==='.custom-price'?customPrice:s==='.catalog-item-label'?{}:s==='.search-input'?searchBox:s==='.addon-select'?addon:null,querySelectorAll:()=>[]};
 const received=new Element();received.value='0';received.matches=s=>s==='.payment-amount';
 const paymentMethod={value:'pix'};
 const paymentLine={querySelector:s=>s==='select'?paymentMethod:received};
 const saleCustomer={selectedOptions:[{dataset:{wallet:'0'}}]};
-const form=new Element();form.dataset={currency:'BRL'};
+const form=new Element();form.dataset={currency:'BRL',stock:'1'};
 form.querySelectorAll=s=>s==='.sale-line'?[saleLine]:s==='.payment-line'?[paymentLine]:[];
-form.querySelector=s=>s==='[name=customer_id]'?saleCustomer:null;
+form.querySelector=s=>s==='[name=customer_id]'?saleCustomer:s==='.product-select'?product:null;
 nodes['#sale-form']=form;
 const saleDocument={querySelector:s=>nodes[s]||null,querySelectorAll:s=>s==='.sale-line'?[saleLine]:s==='.payment-line'?[paymentLine]:[]};
-vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{document:saleDocument,Intl,setTimeout});
+vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{document:saleDocument,Intl,setTimeout,confirm:()=>false});
 assert.equal(received.value,'200.00');assert.equal(received.readOnly,false);
 received.value='12.34';form.events.input({target:received});assert.equal(received.value,'12.34');assert.equal(nodes['#auto-payment'].value,'0');
 nodes['#discount'].value='10%';nodes['#extra'].value='5%';form.events.input({target:{matches:()=>false}});assert.equal(received.value,'12.34');
@@ -52,3 +52,11 @@ nodes['#reset-payment'].events.click();assert.equal(received.value,'190.00');ass
 saleCustomer.selectedOptions[0].dataset.wallet='25000';form.events.input({target:{matches:()=>false}});assert.equal(received.value,'0.00');assert.equal(nodes['#wallet-row'].hidden,false);
 paymentMethod.value='fiado';saleCustomer.selectedOptions[0].dataset.wallet='0';form.events.input({target:{matches:()=>false}});assert.equal(nodes['#pending-row'].hidden,false);assert.equal(received.value,'190.00');
 console.log('Valor recebido editável, cálculo percentual e saldos condicionais: OK');
+
+assert.equal(nodes['#wallet-current-row'].hidden,true);
+saleCustomer.selectedOptions[0].dataset.wallet='5000';form.events.input({target:{matches:()=>false}});assert.equal(nodes['#wallet-current-row'].hidden,false);
+customToggle.checked=true;nodes['#discount'].value='0';nodes['#extra'].value='0';form.events.input({target:{matches:()=>false}});assert.match(nodes['#subtotal'].textContent,/25,00/);
+customToggle.checked=false;nodes['#barcode'].value='789123';nodes['#barcode'].events.keydown({key:'Enter',preventDefault(){},target:nodes['#barcode']});assert.equal(quantity.value,5);assert.equal(nodes['#barcode'].value,'');
+nodes['#barcode'].value='unknown';nodes['#barcode'].events.keydown({key:'Enter',preventDefault(){},target:nodes['#barcode']});assert.equal(quantity.value,5);
+quantity.value='12';let prevented=false;form.events.submit({preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.equal(nodes['#allow-negative-stock'].value,'0');
+console.log('Item avulso, saldo atual, leitor com quantidade e recusa de estoque negativo: OK');

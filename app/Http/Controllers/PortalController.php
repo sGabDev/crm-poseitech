@@ -114,7 +114,7 @@ class PortalController extends Controller
         abort_unless($company->available() && $company->enabled('catalog'), 404);
         $this->t->company = $company;
 
-        return view('catalog', ['company' => $company, 'products' => $this->t->query('products')->where('active', true)->orderBy('category')->orderBy('name')->paginate(24)]);
+        return view('catalog', ['company' => $company, 'products' => $this->t->query('products')->where('active', true)->whereNull('deleted_at')->orderBy('category')->orderBy('name')->get()]);
     }
 
     public function image(Request $r, int $companyId, int $productId)

@@ -5,6 +5,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BusinessController;
 use App\Http\Controllers\CampaignController;
+use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ResourceController;
 use App\Http\Controllers\SettingsController;
@@ -28,6 +29,7 @@ Route::get('/portal/access/{token}', [PortalController::class, 'access'])->middl
 Route::get('/portal', [PortalController::class, 'home']);
 Route::post('/portal/logout', [PortalController::class, 'logout']);
 Route::get('/receipt/{token}', [PortalController::class, 'receipt'])->where('token', '[a-f0-9]{64}')->middleware('throttle:60,1');
+Route::post('/catalog/{slug}', [CatalogController::class, 'checkout'])->middleware('throttle:10,1');
 Route::get('/catalog/{slug}', [PortalController::class, 'catalog']);
 Route::get('/media/{companyId}/{productId}', [PortalController::class, 'image'])->whereNumber(['companyId', 'productId']);
 Route::get('/logo/{companyId}', [PortalController::class, 'logo'])->whereNumber('companyId');
@@ -76,6 +78,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/reports/email', [CampaignController::class, 'report'])->middleware('throttle:3,1');
     Route::get('/stock', [BusinessController::class, 'stock']);
     Route::post('/stock', [BusinessController::class, 'stockAction']);
+    Route::post('/catalog-orders/{id}', [CatalogController::class, 'action'])->whereNumber('id');
     Route::get('/orders', [BusinessController::class, 'orders']);
     Route::post('/orders/{id}', [BusinessController::class, 'orderAction'])->whereNumber('id');
     Route::get('/reports', [BusinessController::class, 'reports']);

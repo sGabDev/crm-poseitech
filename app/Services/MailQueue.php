@@ -17,6 +17,15 @@ class MailQueue
         if (! $company->available() || ! $company->smtp) {
             return 'indisponível';
         }
+        $reward = DB::table('coupon_grants')->where('company_id', $company->id)->where('email_log_id', $id)->first();
+        if ($reward) {
+            $coupon = DB::table('coupons')->where('company_id', $company->id)->find($reward->coupon_id);
+            if ($reward->revoked_at || $reward->used_sale_id || ! $coupon || $coupon->deleted_at || ! $coupon->active || $coupon->expires_at < today()->toDateString()) {
+                (clone $query)->whereIn('status', ['pending', 'failed'])->update(['status' => 'cancelled', 'updated_at' => now()]);
+
+                return 'cancelled';
+            }
+        }
         $customer = $email->customer_id ? DB::table('customers')->where('company_id', $company->id)->find($email->customer_id) : null;
         if (($email->campaign_id && ! $company->enabled('campaigns')) || ($email->customer_id && (! $customer || $customer->anonymized_at || ($email->campaign_id && ! $customer->email_consent)))) {
             (clone $query)->whereIn('status', ['pending', 'failed'])->update(['status' => 'cancelled', 'updated_at' => now()]);

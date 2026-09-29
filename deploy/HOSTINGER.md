@@ -140,3 +140,20 @@ Depois de enviar os arquivos atualizados, execute na pasta que contém `artisan`
 ```
 
 A migração mantém as vendas e os pagamentos existentes e prepara o saldo devedor por cliente. Clientes existentes recebem dia de vencimento 5; ajuste no cadastro quando necessário. Nos meses sem o dia escolhido (por exemplo, 31), o vencimento usa o último dia do mês. Preserve o `.env` e a `APP_KEY` atuais.
+
+
+## Atualização: vendas, recompensas e catálogo (29/09)
+
+Envie todos os arquivos alterados, incluindo `database/migrations/2026_09_29_000001_catalog_and_coupon_rewards.php`, `public/assets/catalog.css` e `public/assets/catalog.js`. Na pasta do `artisan`, execute:
+
+```bash
+/opt/alt/php83/usr/bin/php artisan migrate --force
+/opt/alt/php83/usr/bin/php artisan config:clear
+/opt/alt/php83/usr/bin/php artisan route:clear
+/opt/alt/php83/usr/bin/php artisan view:clear
+```
+
+- **Venda:** marque Item avulso para informar nome, preço e quantidade sem criar cadastro. O leitor deve operar como teclado e finalizar com Enter; mantenha o foco em Leitor de barras. O campo Código do produto deve conter o código lido e ser exclusivo entre produtos ativos. Leituras repetidas somam a quantidade por leitura. Venda sem estoque exige confirmação e gera auditoria; o estoque pode ficar negativo para reposição posterior.
+- **Cupons:** compra mínima maior que zero é o subtotal necessário para conquistar o benefício, uma vez por cliente e cupom, em novas vendas. O resgate ocorre em uma próxima compra de qualquer valor; o desconto fica limitado ao subtotal. Prazo, cliente exclusivo e limite global de usos continuam valendo. Cupom com compra mínima zero continua sendo um código livre. O histórico mostra conquista, estado do e-mail e venda de uso. Excluir arquiva o cupom e preserva histórico. Cancelar a compra que o originou revoga o benefício; cancelar o resgate libera o uso novamente se o benefício continuar válido.
+- **Envios:** cliente identificado e com e-mail válido recebe a recompensa pela fila SMTP existente. Mantenha o cron `poseitech:mail` ativo. Estar na fila não significa que o SMTP já entregou a mensagem.
+- **Catálogo:** em Configurações, personalize cor, título e apresentação, copie o link e habilite pedidos online. Requer módulo Pedidos. O carrinho envia uma solicitação, sem cobrar ou reservar estoque. Na tela Pedidos, confira os dados e registre a venda; selecione/cadastre o cliente se necessário e confirme os preços atuais com ele. O caixa precisa estar aberto. Frete e pagamento são combinados no atendimento. Pedidos online duplicados não geram duas vendas.

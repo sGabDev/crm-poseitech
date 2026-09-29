@@ -29,6 +29,15 @@ class Commerce
             if (! $this->t->query('cash_registers')->whereNull('closed_at')->exists()) {
                 $this->fail('Abra o caixa antes de registrar qualquer venda, inclusive Pix, cartão, fiado ou saldo da conta.');
             }
+            $catalogOrder = null;
+            if (! empty($d['catalog_order_id'])) {
+                $this->t->authorize('orders', true);
+                $catalogOrder = $this->t->find('catalog_orders', $d['catalog_order_id']);
+                if ($catalogOrder->status !== 'pending') {
+                    $this->fail('Este pedido online já foi atendido ou cancelado.');
+                }
+                $d['order'] = true;
+            }
             $customer = ! empty($d['customer_id']) ? $this->t->find('customers', $d['customer_id']) : null;
             if ($customer?->anonymized_at) {
                 $this->fail('Cliente anonimizado.');
@@ -37,7 +46,14 @@ class Commerce
             $subtotal = 0;
             $cost = 0;
             foreach ($d['items'] as $line) {
-                $p = $this->t->find('products', $line['product_id']);
+                if (empty($line['product_id'])) {
+                    if (! trim($line['name'] ?? '') || Tenant::cents($line['price'] ?? 0) <= 0) {
+                        $this->fail('Informe nome e valor do item avulso.');
+                    }
+                    $p = (object) ['id' => null, 'name' => trim($line['name']), 'price' => Tenant::cents($line['price']), 'cost' => 0, 'type' => 'service', 'active' => true, 'addons' => '[]'];
+                } else {
+                    $p = $this->t->find('products', $line['product_id']);
+                }
                 if (! $p->active) {
                     $this->fail('Produto inativo.');
                 }
@@ -54,7 +70,7 @@ class Commerce
                     $names[] = $addons[$key]['name'];
                 }
                 $p->price += $addonPrice;
-                $itemKey = $p->id.':'.implode(',', $chosen);
+                $itemKey = ($p->id ?? 'custom-'.count($items)).':'.implode(',', $chosen);
                 $items[$itemKey] = ['p' => $p, 'addons' => implode(', ', $names), 'quantity' => ($items[$itemKey]['quantity'] ?? 0) + $qty];
             }
             foreach ($items as $line) {
@@ -66,11 +82,15 @@ class Commerce
             $coupon = null;
             if (! empty($d['coupon'])) {
                 $this->t->authorize('loyalty', true);
-                $coupon = $this->t->query('coupons')->where('code', Str::upper($d['coupon']))->first();
-                if (! $coupon || ! $coupon->active || $coupon->expires_at < now()->toDateString() || $coupon->uses >= $coupon->max_uses || $subtotal < $coupon->minimum || ($coupon->customer_id && $coupon->customer_id !== $customer?->id)) {
+                $coupon = $this->t->query('coupons')->whereNull('deleted_at')->where('code', Str::upper($d['coupon']))->first();
+                if (! $coupon || ! $coupon->active || $coupon->expires_at < now()->toDateString() || $coupon->uses >= $coupon->max_uses || ($coupon->customer_id && $coupon->customer_id !== $customer?->id)) {
                     $this->fail('Cupom inválido para esta compra.');
                 }
-                $discount += $coupon->type === 'percent' ? (int) round($subtotal * $coupon->value / 10000) : $coupon->value;
+                $grant = $customer ? $this->t->query('coupon_grants')->where('coupon_id', $coupon->id)->where('customer_id', $customer->id)->whereNull('used_sale_id')->whereNull('revoked_at')->first() : null;
+                if ($coupon->minimum > 0 && ! $grant) {
+                    $this->fail('Este cliente ainda não ganhou este cupom ou já utilizou o benefício.');
+                }
+                $discount += min(max(0, $subtotal - $discount), $coupon->type === 'percent' ? (int) round($subtotal * $coupon->value / 10000) : $coupon->value);
             }
             $fee = 0;
             if (! empty($d['order'])) {
@@ -88,7 +108,7 @@ class Commerce
                 $this->fail('O desconto não pode superar o subtotal.');
             }
             $total = $subtotal - $discount + $extra;
-            if ($total <= 0 || $total > 99999999999) {
+            if (($total <= 0 && ! $coupon) || $total < 0 || $total > 99999999999) {
                 $this->fail('Total da venda inválido.');
             }
             $submitted = collect($d['payments'] ?? []);
@@ -129,7 +149,7 @@ class Commerce
                 $qty = $line['quantity'];
                 $deduct = $this->t->company->enabled('stock') && $p->type === 'product';
                 if ($deduct) {
-                    $this->stock($p->id, -$qty, 'sale', 'Venda #'.$saleId, $saleId);
+                    $this->stock($p->id, -$qty, 'sale', 'Venda #'.$saleId, $saleId, ! empty($d['allow_negative_stock']));
                 }
                 $this->t->insert('sale_items', ['sale_id' => $saleId, 'product_id' => $p->id, 'name' => $p->name, 'quantity' => $qty,
                     'price' => $p->price, 'cost' => $p->cost, 'total' => $p->price * $qty, 'stock_deducted' => $deduct, 'addons' => $line['addons'] ?: null]);
@@ -144,8 +164,12 @@ class Commerce
             }
             if ($coupon) {
                 $this->t->query('coupons')->where('id', $coupon->id)->increment('uses');
+                if (isset($grant) && $grant) {
+                    $this->t->update('coupon_grants', $grant->id, ['used_sale_id' => $saleId]);
+                }
             }
             if ($customer && $this->t->company->enabled('loyalty')) {
+                app(CouponRewards::class)->earn($customer, $saleId, $subtotal);
                 $settings = $this->t->company->settings ?? [];
                 if (($settings['loyalty_mode'] ?? 'points') === 'cashback') {
                     $cashback = (int) floor($total * ($settings['loyalty_rate'] ?? 1) / 100);
@@ -158,7 +182,10 @@ class Commerce
                 }
             }
             if (! empty($d['order'])) {
-                $this->t->insert('orders', ['sale_id' => $saleId, 'delivery' => ! empty($d['delivery']), 'address' => $d['address'] ?? null, 'fee' => $fee, 'region' => $d['region'] ?? null]);
+                $this->t->insert('orders', ['sale_id' => $saleId, 'delivery' => ! empty($d['delivery']), 'address' => ($d['address'] ?? null) ?: ($customer->address ?? $catalogOrder->address ?? null), 'fee' => $fee, 'region' => $d['region'] ?? null]);
+            }
+            if ($catalogOrder) {
+                $this->t->update('catalog_orders', $catalogOrder->id, ['status' => 'converted', 'sale_id' => $saleId]);
             }
             $this->t->audit('sale.created', 'sales', $saleId, null, ['total' => $total, 'paid' => $paid]);
             if ($customer && filter_var($customer->email, FILTER_VALIDATE_EMAIL)) {
@@ -240,11 +267,14 @@ class Commerce
         }, 3);
     }
 
-    public function stock(int $id, int $delta, string $type, ?string $notes, ?int $sale = null): void
+    public function stock(int $id, int $delta, string $type, ?string $notes, ?int $sale = null, bool $allowNegative = false): void
     {
         $p = $this->t->find('products', $id);
-        if ($p->type !== 'product' || $p->stock + $delta < 0) {
+        if ($p->type !== 'product' || ($p->stock + $delta < 0 && $delta < 0 && ! ($allowNegative && $type === 'sale' && $sale))) {
             $this->fail('Estoque insuficiente ou item é um serviço: '.$p->name);
+        }
+        if ($allowNegative && $p->stock + $delta < 0) {
+            $this->t->audit('stock.override', 'products', $id, ['stock' => $p->stock], ['quantity' => $delta, 'sale_id' => $sale]);
         }
         $this->t->update('products', $id, ['stock' => $p->stock + $delta]);
         $this->t->insert('stock_movements', ['product_id' => $id, 'sale_id' => $sale, 'user_id' => auth()->id(), 'type' => $type, 'quantity' => $delta, 'balance' => $p->stock + $delta, 'notes' => $notes]);
@@ -338,6 +368,8 @@ class Commerce
                 }
                 $this->t->update('payments', $p->id, ['reversed_at' => now()]);
             }
+            $this->t->query('coupon_grants')->where('used_sale_id', $id)->update(['used_sale_id' => null, 'updated_at' => now()]);
+            $this->t->query('coupon_grants')->where('earned_sale_id', $id)->update(['revoked_at' => now(), 'updated_at' => now()]);
             foreach ($this->t->query('sale_items')->where('sale_id', $id)->where('stock_deducted', true)->get() as $item) {
                 $this->stock($item->product_id, $item->quantity, 'return', 'Cancelamento #'.$id, $id);
             }

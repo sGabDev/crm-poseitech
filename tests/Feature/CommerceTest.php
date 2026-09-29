@@ -55,6 +55,74 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_custom_items_and_explicit_negative_stock_confirmation(): void
+    {
+        $this->post('/sales', $this->sale(['items' => [['name' => 'Serviço avulso', 'price' => '15.50', 'quantity' => 2]], 'auto_payment' => 1]))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sale_items', ['product_id' => null, 'name' => 'Serviço avulso', 'total' => 3100]);
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 10]);
+        $data = $this->sale(['items' => [['product_id' => $this->product, 'quantity' => 12]], 'auto_payment' => 1]);
+        $this->post('/sales', $data)->assertSessionHasErrors();
+        $this->post('/sales', $data + ['allow_negative_stock' => 1])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => -2]);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'stock.override']);
+        $id = DB::table('sales')->latest('id')->value('id');
+        $this->post('/sales/'.$id.'/cancel', ['reason' => 'Teste de devolução'])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 10]);
+    }
+
+    public function test_coupon_is_earned_then_used_below_earning_threshold_and_archived(): void
+    {
+        $coupon = app(Tenant::class)->insert('coupons', ['code' => 'RECOMPENSA', 'type' => 'fixed', 'value' => 1000, 'minimum' => 15000, 'max_uses' => 20, 'expires_at' => today()->addMonth()->toDateString(), 'active' => true]);
+        $this->post('/sales', $this->sale(['coupon' => 'RECOMPENSA']))->assertSessionHasErrors();
+        $data = $this->sale();
+        $this->post('/sales', $data)->assertSessionHasNoErrors();
+        $this->post('/sales', $data)->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::table('coupon_grants')->count());
+        $grant = DB::table('coupon_grants')->first();
+        $this->assertNotNull($grant->email_log_id);
+        $this->post('/sales', $this->sale(['items' => [['product_id' => $this->product, 'quantity' => 1]], 'coupon' => 'RECOMPENSA', 'auto_payment' => 1]))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('sales', ['coupon_id' => $coupon, 'total' => 9000]);
+        $this->assertNotNull(DB::table('coupon_grants')->value('used_sale_id'));
+        $this->post('/sales', $this->sale(['coupon' => 'RECOMPENSA']))->assertSessionHasErrors();
+        $this->get('/records/coupons')->assertOk()->assertSee('Usado na venda');
+        $this->post('/records/coupons/'.$coupon.'/delete')->assertSessionHasNoErrors();
+        $this->assertNotNull(DB::table('coupons')->where('id', $coupon)->value('deleted_at'));
+        $this->assertSame(1, DB::table('coupon_grants')->count());
+    }
+
+    public function test_catalog_checkout_validates_prices_stock_and_converts_once(): void
+    {
+        $this->company->update(['settings' => ['catalog_checkout' => true]]);
+        $payload = ['request_key' => (string) Str::uuid(), 'name' => 'Comprador online', 'phone' => '+55 (11) 99999-9999', 'address' => 'Rua do cliente, 123', 'items' => [['product_id' => $this->product, 'quantity' => 2, 'price' => 1]]];
+        $this->get('/catalog/empresa-a')->assertOk()->assertSee('Enviar pedido à loja');
+        $this->post('/catalog/empresa-a', $payload)->assertSessionHasNoErrors();
+        $this->post('/catalog/empresa-a', $payload)->assertSessionHasNoErrors();
+        $this->assertSame(1, DB::table('catalog_orders')->count());
+        $order = DB::table('catalog_orders')->first();
+        $this->assertSame(20000, $order->total);
+        $this->assertSame(0, DB::table('sales')->count());
+        $this->assertDatabaseHas('products', ['id' => $this->product, 'stock' => 10]);
+        $this->get('/orders')->assertOk()->assertSee('Rua do cliente, 123');
+        $this->post('/catalog-orders/'.$order->id, ['action' => 'prepare'])->assertRedirect('/sales/new');
+        $this->post('/sales', $this->sale(['catalog_order_id' => $order->id, 'auto_payment' => 1]))->assertSessionHasNoErrors();
+        $this->post('/sales', $this->sale(['catalog_order_id' => $order->id, 'auto_payment' => 1]))->assertSessionHasErrors();
+        $this->assertDatabaseHas('catalog_orders', ['id' => $order->id, 'status' => 'converted']);
+        $payload['request_key'] = (string) Str::uuid();
+        $payload['items'][0]['quantity'] = 99;
+        $this->post('/catalog/empresa-a', $payload)->assertSessionHasErrors('items');
+        $this->company->update(['settings' => ['catalog_checkout' => false]]);
+        $this->post('/catalog/empresa-a', $payload)->assertNotFound();
+    }
+
+    public function test_catalog_cannot_order_another_company_product(): void
+    {
+        $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'outra', 'modules' => ['catalog', 'orders']]);
+        $product = DB::table('products')->insertGetId(['company_id' => $other->id, 'name' => 'Privado', 'price' => 1, 'stock' => 100, 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
+        $this->company->update(['settings' => ['catalog_checkout' => true]]);
+        $this->post('/catalog/empresa-a', ['request_key' => (string) Str::uuid(), 'name' => 'Teste', 'phone' => '11999999999', 'items' => [['product_id' => $product, 'quantity' => 1]]])->assertNotFound();
+        $this->assertSame(0, DB::table('catalog_orders')->count());
+    }
+
     public function test_category_lists_save_together_and_invalid_list_does_not_partially_save(): void
     {
         $this->post('/cash-flow/categories', ['categories_in' => "Aporte\nReembolso", 'categories_out' => "Aluguel\nImpostos"])->assertSessionHasNoErrors();

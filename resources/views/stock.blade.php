@@ -32,7 +32,7 @@
 </section>
 <section class="card">
 <h2>Movimentar estoque</h2>
-<form method="post" action="{{ url('/stock') }}" class="stack">@csrf<label>Produto<select name="product_id" required>@foreach($products as $p)<option value="{{ $p->id }}">{{ $p->name }}</option>@endforeach</select>
+<form method="post" action="{{ url('/stock') }}" class="stack">@csrf<label>Produto<div class="search-picker"><input type="search" class="search-input" placeholder="Pesquisar produto" required autocomplete="off"><div class="search-results" hidden></div></div><select name="product_id" data-search-select="Produto" hidden><option value="">Selecione...</option>@foreach($products as $p)<option value="{{ $p->id }}">{{ $p->name }}</option>@endforeach</select>
 </label>
 <label>Tipo<select name="type">
 <option value="in">Entrada</option>

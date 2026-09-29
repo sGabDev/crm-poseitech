@@ -14,7 +14,7 @@ function visit(dir) {
   }
 }
 for (const dir of ['app', 'bootstrap', 'config', 'database/migrations', 'database/seeders', 'routes', 'lang', 'tests']) visit(dir);
-run(process.execPath, ['--check', 'public/assets/app.js']);
+for (const file of fs.readdirSync('public/assets').filter(file=>file.endsWith('.js'))) run(process.execPath, ['--check', path.join('public/assets',file)]);
 console.log('Sintaxe PHP e JavaScript válida.');
 if (process.argv.includes('--test')) {
   const result = spawnSync(php, ['artisan', 'test', '--compact', '--no-ansi'], { stdio: 'inherit', windowsHide: true });

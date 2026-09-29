@@ -62,7 +62,7 @@ class BusinessController extends Controller
 
     public function sell(Request $r)
     {
-        $d = $r->validate(['request_key' => 'required|uuid', 'customer_id' => 'nullable|integer', 'items' => 'required|array|min:1|max:100', 'items.*.product_id' => 'required|integer',
+        $d = $r->validate(['catalog_order_id' => 'nullable|integer', 'request_key' => 'required|uuid', 'customer_id' => 'nullable|integer', 'items' => 'required|array|min:1|max:100', 'items.*.product_id' => 'nullable|integer', 'items.*.name' => 'nullable|string|max:160', 'items.*.price' => 'nullable|numeric|min:0.01|max:9999999', 'allow_negative_stock' => 'nullable|boolean',
             'items.*.quantity' => 'required|integer|min:1|max:10000', 'items.*.addons' => 'nullable|array|max:20', 'items.*.addons.*' => 'integer|min:0|max:19', 'discount' => 'nullable|string|max:30', 'extra' => 'nullable|string|max:30', 'use_balance' => 'nullable|boolean',
             'payments' => 'required|array|min:1|max:8', 'payments.*.method' => 'required|in:'.implode(',', array_keys(config('poseitech.sale_methods'))),
             'payments.*.amount' => 'required|numeric|min:0', 'auto_payment' => 'nullable|boolean',
@@ -181,7 +181,7 @@ class BusinessController extends Controller
 
     public function receiveDebt(Request $r, int $id)
     {
-        $d = $r->validate(['request_key' => 'required|uuid', 'amount' => 'required|numeric|min:0.01', 'method' => 'required|in:'.implode(',', array_keys(config('poseitech.methods')))]);
+        $d = $r->validate(['catalog_order_id' => 'nullable|integer', 'request_key' => 'required|uuid', 'amount' => 'required|numeric|min:0.01', 'method' => 'required|in:'.implode(',', array_keys(config('poseitech.methods')))]);
         $this->commerce->settleCustomer($id, $d);
 
         return back()->with('success', 'Pagamento abatido do saldo devedor do cliente.');
@@ -246,9 +246,11 @@ class BusinessController extends Controller
     public function orders()
     {
         $this->t->authorize('orders');
-        $orders = $this->t->query('orders')->whereNotIn('status', ['delivered', 'cancelled'])->orderBy('id')->get();
+        $orders = $this->t->query('orders')->leftJoin('sales', 'sales.id', '=', 'orders.sale_id')->leftJoin('customers', function ($join) {
+            $join->on('customers.id', '=', 'sales.customer_id')->on('customers.company_id', '=', 'orders.company_id');
+        })->select('orders.*', 'customers.address as customer_address', 'customers.name as customer_name')->whereNotIn('orders.status', ['delivered', 'cancelled'])->orderBy('orders.id')->get();
 
-        return view('orders', ['orders' => $orders, 'history' => $this->t->query('orders')->whereIn('status', ['delivered', 'cancelled'])->orderByDesc('id')->paginate(15),
+        return view('orders', ['onlineOrders' => $this->t->query('catalog_orders')->orderByDesc('id')->paginate(15, ['*'], 'online_page'), 'orders' => $orders, 'history' => $this->t->query('orders')->whereIn('status', ['delivered', 'cancelled'])->orderByDesc('id')->paginate(15),
             'drivers' => DB::table('users')->where('company_id', $this->t->id())->where('active', true)->get(['id', 'name'])]);
     }
 
@@ -284,7 +286,7 @@ class BusinessController extends Controller
         $data = $this->analytics->dashboard($period);
         $sales = $this->analytics->sales($period);
         $data['sellers'] = (clone $sales)->join('users', 'users.id', '=', 'sales.user_id')->selectRaw('users.name, COUNT(*) as count, SUM(sales.total) as total, AVG(sales.total) as ticket')->groupBy('users.id', 'users.name')->get();
-        $data['categories'] = $this->t->query('sale_items')->join('products', 'products.id', '=', 'sale_items.product_id')->whereIn('sale_id', (clone $sales)->select('sales.id'))->selectRaw('products.category, SUM(sale_items.total) as total')->groupBy('products.category')->get();
+        $data['categories'] = $this->t->query('sale_items')->leftJoin('products', 'products.id', '=', 'sale_items.product_id')->whereIn('sale_id', (clone $sales)->select('sales.id'))->selectRaw('products.category, SUM(sale_items.total) as total')->groupBy('products.category')->get();
         $data['forecast'] = $this->t->query('sales')->where('status', 'completed')->where('created_at', '>=', now()->subDays(30))->where('created_at', '<', now()->startOfDay())->sum('total') / 30;
         $data['campaignResults'] = $this->t->query('email_logs')->selectRaw('status, COUNT(*) as count')->groupBy('status')->get();
         $data['loyaltyBalance'] = $this->t->query('loyalty_transactions')->sum('points');

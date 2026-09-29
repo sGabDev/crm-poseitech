@@ -64,6 +64,14 @@ class SettingsController extends Controller
                 throw ValidationException::withMessages(['modules' => 'Feche o caixa antes de desativar o módulo.']);
             }
             $company->update(['modules' => $modules]);
+        } elseif ($section === 'catalog') {
+            $this->t->authorize('catalog', true);
+            $d = $r->validate(['catalog_title' => 'nullable|string|max:120', 'catalog_description' => 'nullable|string|max:1000', 'catalog_color' => 'required|regex:/^#[a-fA-F0-9]{6}$/', 'catalog_checkout' => 'nullable|boolean']);
+            $d['catalog_checkout'] = $r->boolean('catalog_checkout');
+            if ($d['catalog_checkout'] && ! $company->enabled('orders')) {
+                throw ValidationException::withMessages(['catalog_checkout' => 'O suporte precisa habilitar Pedidos para receber compras online.']);
+            }
+            $company->update(['settings' => array_merge($company->settings ?? [], $d)]);
         } elseif ($section === 'smtp') {
             $d = $r->validate(['host' => 'required|string|max:200', 'port' => 'required|integer|min:1|max:65535', 'username' => 'nullable|string|max:200', 'password' => 'nullable|string|max:500', 'encryption' => 'required|in:tls,ssl', 'from' => 'required|email|max:180', 'from_name' => 'required|string|max:160']);
             if (empty($d['password'])) {

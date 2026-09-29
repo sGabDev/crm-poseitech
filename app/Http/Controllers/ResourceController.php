@@ -29,7 +29,7 @@ class ResourceController extends Controller
     {
         $spec = $this->spec($resource);
         $q = $this->t->query($resource);
-        if ($resource === 'products') {
+        if (in_array($resource, ['products', 'coupons'])) {
             $q->whereNull('deleted_at');
         }
         if ($resource === 'customers') {
@@ -40,14 +40,18 @@ class ResourceController extends Controller
         }
         $records = $q->orderByDesc('id')->paginate(20)->withQueryString();
 
-        return view('records', compact('resource', 'spec', 'records'));
+        $grants = $resource === 'coupons' ? $this->t->query('coupon_grants')->join('coupons', 'coupons.id', '=', 'coupon_grants.coupon_id')->join('customers', 'customers.id', '=', 'coupon_grants.customer_id')->leftJoin('email_logs', 'email_logs.id', '=', 'coupon_grants.email_log_id')->select('coupon_grants.*', 'coupons.code', 'customers.name', 'email_logs.status as mail_status', 'email_logs.sent_at')->orderByDesc('coupon_grants.id')->paginate(20, ['*'], 'grants_page') : collect();
+
+        $couponUses = $resource === 'coupons' ? $this->t->query('sales')->join('coupons', 'coupons.id', '=', 'sales.coupon_id')->leftJoin('customers', 'customers.id', '=', 'sales.customer_id')->select('sales.id', 'sales.status', 'sales.created_at', 'coupons.code', 'customers.name')->orderByDesc('sales.id')->paginate(20, ['*'], 'uses_page') : collect();
+
+        return view('records', compact('resource', 'spec', 'records', 'grants', 'couponUses'));
     }
 
     public function form(string $resource, ?int $id = null)
     {
         $spec = $this->spec($resource, true);
         $record = $id ? $this->t->find($resource, $id) : null;
-        abort_if($resource === 'products' && $record?->deleted_at, 404);
+        abort_if(in_array($resource, ['products', 'coupons']) && $record?->deleted_at, 404);
         $customers = $resource === 'coupons' ? $this->t->query('customers')->whereNull('anonymized_at')->orderBy('name')->limit(1000)->get() : collect();
 
         return view('record-form', compact('resource', 'spec', 'record', 'customers'));
@@ -57,7 +61,7 @@ class ResourceController extends Controller
     {
         $spec = $this->spec($resource, true);
         $before = $id ? $this->t->find($resource, $id) : null;
-        abort_if($resource === 'products' && $before?->deleted_at, 404);
+        abort_if(in_array($resource, ['products', 'coupons']) && $before?->deleted_at, 404);
         abort_if($resource === 'customers' && $before?->anonymized_at, 422, 'Cliente anonimizado.');
         $rules = array_map(fn ($f) => $f[2], $spec['fields']);
         if ($resource === 'coupons') {
@@ -96,7 +100,7 @@ class ResourceController extends Controller
             $d['phone'] = $d['whatsapp'] = $digits === '' ? null : $phone;
             $d['consented_at'] = now();
         }
-        if ($resource === 'products') {
+        if (in_array($resource, ['products', 'coupons'])) {
             $addons = [];
             foreach (preg_split('/\R/', trim($d['addons'] ?? '')) as $line) {
                 if (trim($line) === '') {
@@ -140,14 +144,14 @@ class ResourceController extends Controller
 
     public function destroy(string $resource, int $id)
     {
-        abort_unless(in_array($resource, ['suppliers', 'goals', 'products']), 404);
+        abort_unless(in_array($resource, ['suppliers', 'goals', 'products', 'coupons']), 404);
         $this->spec($resource, true);
         DB::transaction(function () use ($resource, $id) {
             $this->t->lock();
             $record = $this->t->find($resource, $id);
             $this->t->audit('record.deleted', $resource, $id, $record);
-            if (in_array($resource, ['suppliers', 'products'])) {
-                $this->t->update($resource, $id, ['deleted_at' => now()] + ($resource === 'products' ? ['active' => false] : []));
+            if (in_array($resource, ['suppliers', 'products', 'coupons'])) {
+                $this->t->update($resource, $id, ['deleted_at' => now()] + (in_array($resource, ['products', 'coupons']) ? ['active' => false] : []));
             } else {
                 $this->t->query($resource)->where('id', $id)->delete();
             }

@@ -9,6 +9,7 @@
 </div>
 <section class="card"><h2>Minha senha</h2>@include('components.password-form')</section>
 @include('components.modules')
+@include('components.catalog-settings')
 <details class="card" open>
 <summary>Dados da empresa</summary>
 <form method="post" enctype="multipart/form-data" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="company">@foreach(['name'=>'Nome fantasia','legal_name'=>'Razão social','document'=>'CPF/CNPJ','phone'=>'Telefone','whatsapp'=>'WhatsApp com DDI','email'=>'E-mail','address'=>'Endereço'] as $key=>$label)<label>{{ $label }}<input name="{{ $key }}" value="{{ old($key,$company->$key) }}" @required($key==='name') type="{{ $key==='email' ? 'email' : 'text' }}">

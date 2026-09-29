@@ -10,7 +10,7 @@ class Tenant
 {
     public ?Company $company = null;
 
-    private const TABLES = ['customer_deposits', 'wallet_entries', 'flow_entries', 'debt_receipts', 'customers', 'products', 'suppliers', 'sales', 'sale_items', 'payments', 'cash_registers', 'cash_transactions', 'accounts', 'stock_movements', 'coupons', 'loyalty_transactions', 'customer_credits', 'orders', 'campaigns', 'email_logs', 'alerts', 'goals', 'audit_logs'];
+    private const TABLES = ['coupon_grants', 'catalog_orders', 'customer_deposits', 'wallet_entries', 'flow_entries', 'debt_receipts', 'customers', 'products', 'suppliers', 'sales', 'sale_items', 'payments', 'cash_registers', 'cash_transactions', 'accounts', 'stock_movements', 'coupons', 'loyalty_transactions', 'customer_credits', 'orders', 'campaigns', 'email_logs', 'alerts', 'goals', 'audit_logs'];
 
     public function id(): int
     {

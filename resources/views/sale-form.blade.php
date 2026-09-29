@@ -10,9 +10,9 @@
     </div>
     <div class="filters"><label>Tipo de operação<select id="operation-type"><option value="sale">Venda de produtos ou serviços</option><option value="deposit" @selected(old('operation')==='deposit')>Depósito na conta do cliente (não é venda)</option></select></label></div>
     @include('components.deposit-form')
-    <form method="post" action="{{ url('/sales') }}" id="sale-form" data-currency="{{ $company->currency }}">@csrf<input
+    <form method="post" action="{{ url('/sales') }}" id="sale-form" data-stock="{{ $company->enabled('stock') ? 1 : 0 }}" data-currency="{{ $company->currency }}">@csrf<input
             type="hidden" name="request_key" value="{{ old('request_key', (string) \Illuminate\Support\Str::uuid()) }}">
-        <div class="grid wide-left">
+        <input type="hidden" name="catalog_order_id" value="{{ old('catalog_order_id') }}">@if(old('catalog_order_id'))<p class="notice">Pedido online #{{ old('catalog_order_id') }}: confira o cliente, os valores atuais e o pagamento antes de concluir.</p>@endif<div class="grid wide-left">
             <div>
                 <section class="card">
                     <h2>Cliente e itens</h2>
@@ -24,18 +24,21 @@
                             {{ $c->phone ? ' · ' . $c->phone : '' }}</option>@endforeach
                         </select>
                     </label>
-                    <div id="sale-items">@foreach(old('items', [['product_id' => '', 'quantity' => 1]]) as $index => $line)
+                    <input type="hidden" name="allow_negative_stock" id="allow-negative-stock" value="0"><div class="form-grid"><label>Leitor de barras<input id="barcode" autocomplete="off" placeholder="Leia o código e pressione Enter"></label><label>Quantidade por leitura<input id="barcode-quantity" type="number" min="1" max="10000" value="1"></label></div><p id="barcode-message" role="status"></p><div id="sale-items">@foreach(old('items', [['product_id' => '', 'quantity' => 1]]) as $index => $line)
                         <div class="sale-line">
-                            <label>Produto ou serviço
+                            <label class="catalog-item-label">Produto ou serviço
                                 <div class="search-picker"><input type="search" class="search-input" placeholder="Digite o nome do produto ou serviço" autocomplete="off" aria-label="Nome do produto ou serviço" required><div class="search-results" hidden></div></div>
                                 <select name="items[{{ $index }}][product_id]" class="product-select" data-search-select="Nome do produto ou serviço" hidden>
                                     <option value="">Selecione...</option>@foreach($products as $p)
-                                        <option value="{{ $p->id }}" data-price="{{ $p->price }}"
-                                            data-addons="{{ $p->addons ?? '[]' }}" @selected($line['product_id'] == $p->id)>
+                                        <option value="{{ $p->id }}" data-code="{{ $p->code }}" data-stock="{{ $p->stock }}" data-type="{{ $p->type }}" data-price="{{ $p->price }}"
+                                            data-addons="{{ $p->addons ?? '[]' }}" @selected(($line['product_id'] ?? '') == $p->id)>
                                     {{ $p->name }} · {{ \App\Services\Tenant::money($p->price) }}</option>@endforeach
                                 </select>
                             </label>
-                            <label>Quantidade<input class="quantity" type="number" name="items[{{ $index }}][quantity]"
+                            <label class="check"><input type="checkbox" class="custom-toggle" @checked(!empty($line['name']) && empty($line['product_id']))>Item avulso</label>
+<label class="custom-field" hidden>Nome do item<input class="custom-name" name="items[{{ $index }}][name]" value="{{ $line['name'] ?? '' }}" maxlength="160"></label>
+<label class="custom-field" hidden>Valor unitário<input class="custom-price" type="number" name="items[{{ $index }}][price]" value="{{ $line['price'] ?? '' }}" step="0.01" min="0.01" max="9999999"></label>
+<label>Quantidade<input class="quantity" type="number" name="items[{{ $index }}][quantity]"
                                     min="1" max="10000" value="{{ $line['quantity'] }}" required>
                             </label>
                             <label class="addon-label">Adicionais<select multiple class="addon-select"
@@ -112,7 +115,7 @@
                         <span>Valor em fiado</span>
                         <strong id="sale-pending">R$ 0,00</strong>
                     </div>
-                    <div class="metric-row" id="wallet-row" hidden><span>Valor restante na conta</span><strong id="wallet-remaining"></strong></div>
+                    <div class="metric-row" id="wallet-current-row" hidden><span>Saldo atual da conta</span><strong id="wallet-current"></strong></div><div class="metric-row" id="wallet-row" hidden><span>Valor restante na conta</span><strong id="wallet-remaining"></strong></div>
                     <label>Observação<textarea name="notes" rows="3">{{ old('notes') }}</textarea>
                     </label>
                     @if(!$registerOpen)<p class="notice error">Abra o caixa antes de concluir uma venda, qualquer que seja a forma de pagamento.</p>@if(auth()->user()->allows('cash',true))<a class="button secondary" href="{{ url('/cash') }}">Abrir caixa</a>@else<p>Peça ao responsável pelo caixa para abri-lo.</p>@endif
