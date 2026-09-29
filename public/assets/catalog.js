@@ -9,10 +9,13 @@ if (store) {
   let count = 0;
   cards.forEach(card => { card.hidden = !normalize(card.dataset.name).includes(term) || !!(category && card.dataset.category !== category); if (!card.hidden) count++; });
   document.querySelector('#catalog-count').textContent = count + ' item(ns)';
-  document.querySelector('#catalog-empty').hidden = count > 0;
+  document.querySelector('#catalog-section-heading').textContent = category || 'Nosso catálogo';
+  document.querySelectorAll('[data-category-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.categoryFilter===category)));
+  document.querySelector('#catalog-empty').hidden = count > 0 || cards.length === 0;
  };
  document.querySelector('#catalog-search').addEventListener('input', filter);
  document.querySelector('#catalog-category').addEventListener('change', filter);
+ document.querySelectorAll('[data-category-filter]').forEach(button=>button.addEventListener('click',()=>{document.querySelector('#catalog-category').value=button.dataset.categoryFilter;filter();}));
  document.querySelector('#catalog-sort').addEventListener('change', event => {
   const sorted = [...cards].sort((a,b) => event.target.value === 'name' ? a.dataset.name.localeCompare(b.dataset.name,'pt-BR') : (Number(a.dataset.price)-Number(b.dataset.price)) * (event.target.value === 'price-high' ? -1 : 1));
   sorted.forEach(card => card.parentElement.append(card));
@@ -74,6 +77,7 @@ if (store) {
    document.querySelector('#catalog-total').textContent = money(total);
    document.querySelector('#catalog-bar-total').textContent = units + ' item(ns) · ' + money(total);
    document.querySelector('#catalog-send').disabled = !saved.length;
+   document.querySelector('#catalog-continue').disabled = !saved.length;
    document.querySelector('#catalog-clear').disabled = !saved.length;
    try { localStorage.setItem(storageKey,JSON.stringify(saved)); } catch {}
   };
@@ -87,6 +91,8 @@ if (store) {
   });
   document.querySelector('#catalog-clear').addEventListener('click',()=>{cards.forEach(card=>{const input=card.querySelector('.catalog-quantity');if(input)input.value=0;card.querySelectorAll('.catalog-addon').forEach(addon=>addon.checked=false);});notice.textContent='Carrinho limpo.';update();});
   document.querySelectorAll('.catalog-reorder').forEach(element=>element.addEventListener('click',()=>{restore(JSON.parse(element.dataset.items),true);update();document.querySelector('#catalog-cart').scrollIntoView({behavior:'smooth'});}));
+  document.querySelector('#catalog-continue').addEventListener('click',()=>{document.querySelector('#catalog-customer-details').open=true;form.querySelector('[name=name]').focus();});
+  form.addEventListener('invalid',()=>{document.querySelector('#catalog-customer-details').open=true;},true);
   form.addEventListener('submit', event => {
    const invalid = cards.map(card=>card.querySelector('.catalog-quantity')).find(input=>input&&!input.checkValidity());
    if (invalid) {event.preventDefault(); invalid.closest('.catalog-product').hidden=false; invalid.reportValidity();return;}

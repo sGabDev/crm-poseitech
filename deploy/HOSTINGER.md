@@ -167,3 +167,10 @@ Envie também a migração `2026_09_29_000002_coupon_products_and_catalog_histor
 - Para alterar o endereço do catálogo, o suporte entra na empresa e acessa Configurações > Catálogo > Link do catálogo. O link antigo deixa de funcionar; o novo deve ser compartilhado. A permissão é validada no servidor e a alteração é auditada.
 - O carrinho é preservado no armazenamento local por empresa, sem guardar nome, telefone ou endereço. Recarregar a página recalcula preços atuais e ajusta quantidades ao estoque. Após envio confirmado, o carrinho é limpo.
 - Meus pedidos usa um cookie privado persistente por empresa. Mostra os pedidos feitos neste navegador após esta atualização, os estados registrado/cancelado e o andamento em Pedidos. Não recupera compras antigas sem esse identificador, nem compartilha histórico entre dispositivos ou após limpeza dos cookies. A página retorna `Cache-Control: private, no-store`; mantenha o cache de página/CDN desabilitado para `/catalog/*` para não compartilhar dados de visitantes.
+
+
+## Layout do catálogo e de Nova Venda
+
+Esta revisão reorganiza o catálogo em formato de cardápio com categorias, produtos compactos, sacola lateral e identificação na etapa de finalizar. Nova Venda separa cliente, itens e pagamento; campos opcionais ficam em seções expansíveis. Pedidos do catálogo mostra apenas solicitações pendentes sem venda registrada, preservando o histórico dos demais pedidos.
+
+Envie as views, `app/Http/Controllers/BusinessController.php`, `public/assets/catalog.css`, `public/assets/catalog.js` e o novo `public/assets/sale.css`. Execute `/opt/alt/php83/usr/bin/php artisan view:clear`. Esta revisão de layout não acrescenta migrações; as migrações anteriores continuam necessárias caso ainda não tenham sido aplicadas.

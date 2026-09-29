@@ -250,7 +250,7 @@ class BusinessController extends Controller
             $join->on('customers.id', '=', 'sales.customer_id')->on('customers.company_id', '=', 'orders.company_id');
         })->select('orders.*', 'customers.address as customer_address', 'customers.name as customer_name')->whereNotIn('orders.status', ['delivered', 'cancelled'])->orderBy('orders.id')->get();
 
-        return view('orders', ['onlineOrders' => $this->t->query('catalog_orders')->orderByDesc('id')->paginate(15, ['*'], 'online_page'), 'orders' => $orders, 'history' => $this->t->query('orders')->whereIn('status', ['delivered', 'cancelled'])->orderByDesc('id')->paginate(15),
+        return view('orders', ['onlineOrders' => $this->t->query('catalog_orders')->where('status', 'pending')->whereNull('sale_id')->orderByDesc('id')->paginate(15, ['*'], 'online_page'), 'orders' => $orders, 'history' => $this->t->query('orders')->whereIn('status', ['delivered', 'cancelled'])->orderByDesc('id')->paginate(15),
             'drivers' => DB::table('users')->where('company_id', $this->t->id())->where('active', true)->get(['id', 'name'])]);
     }
 

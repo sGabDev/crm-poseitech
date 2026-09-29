@@ -177,6 +177,18 @@ class CommerceTest extends TestCase
         $this->post('/catalog/empresa-a', $payload)->assertNotFound();
     }
 
+    public function test_orders_inbox_only_shows_unregistered_pending_catalog_orders(): void
+    {
+        $tenant = app(Tenant::class);
+        $pending = $tenant->insert('catalog_orders', ['request_key' => (string) Str::uuid(), 'name' => 'Pendente para atender', 'phone' => '11999999999', 'items' => '[]', 'total' => 1000]);
+        $tenant->insert('catalog_orders', ['request_key' => (string) Str::uuid(), 'name' => 'Já registrado', 'phone' => '11999999999', 'items' => '[]', 'total' => 1000, 'status' => 'converted']);
+        $tenant->insert('catalog_orders', ['request_key' => (string) Str::uuid(), 'name' => 'Já cancelado', 'phone' => '11999999999', 'items' => '[]', 'total' => 1000, 'status' => 'cancelled']);
+        $this->get('/orders')->assertOk()->assertViewHas('onlineOrders', fn ($orders) => $orders->total() === 1 && $orders->first()->id === $pending);
+        $this->post('/catalog-orders/'.$pending, ['action' => 'cancel'])->assertSessionHasNoErrors();
+        $this->get('/orders')->assertOk()->assertViewHas('onlineOrders', fn ($orders) => $orders->total() === 0)->assertSee('Nenhum pedido do catálogo aguardando atendimento.');
+        $this->assertSame(3, $tenant->query('catalog_orders')->count());
+    }
+
     public function test_catalog_cannot_order_another_company_product(): void
     {
         $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'outra', 'modules' => ['catalog', 'orders']]);
