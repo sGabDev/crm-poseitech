@@ -56,8 +56,41 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_whatsapp_buttons_redirect_to_html_and_receipts_send_without_scheduler(): void
+    {
+        Http::fake(['*' => Http::response(['status' => 'sent'])]);
+        \Illuminate\Support\Facades\Bus::fake([\App\Jobs\SendWhatsAppReceipt::class]);
+        config(['whatsapp.token' => str_repeat('a', 32)]);
+        $t = app(Tenant::class);
+        $bot = $t->insert('whatsapp_connections', ['name' => 'Vendas', 'automatic' => true]);
+        $t->update('customers', $this->customer, ['phone' => '11999999999']);
+        $this->post('/sales', $this->sale())->assertRedirect();
+        \Illuminate\Support\Facades\Bus::assertDispatchedAfterResponse(\App\Jobs\SendWhatsAppReceipt::class);
+        $message = $t->query('whatsapp_messages')->first();
+        (new \App\Jobs\SendWhatsAppReceipt($this->company->id, $message->id))->handle();
+        $this->assertDatabaseHas('whatsapp_messages', ['id' => $message->id, 'status' => 'sent']);
+        $this->get('/whatsapp/'.$bot.'/status')->assertRedirect('/whatsapp');
+        $this->withSession(['_previous' => ['url' => url('/whatsapp/'.$bot.'/status')]])
+            ->post('/whatsapp/'.$bot, ['action' => 'automatic'])->assertRedirect('/whatsapp');
+        $this->post('/sales/'.$message->sale_id.'/whatsapp')->assertRedirect('/sales/'.$message->sale_id)->assertSessionHas('success');
+        Http::assertSentCount(1);
+    }
+
+    public function test_whatsapp_status_reports_safe_connection_diagnostics(): void
+    {
+        $id = app(Tenant::class)->insert('whatsapp_connections', ['name' => 'Diagnóstico']);
+        config(['whatsapp.token' => 'private-token-do-not-expose']);
+        Http::fake(['*' => Http::sequence()->push(['error' => 'Unauthorized'], 401)->push(['error' => 'Not found'], 404)]);
+        $this->getJson('/whatsapp/'.$id.'/status')->assertStatus(503)
+            ->assertJsonPath('status', 'unavailable')->assertSee('Token recusado')->assertDontSee('private-token-do-not-expose');
+        $this->getJson('/whatsapp/'.$id.'/status')->assertStatus(503)->assertSee('URL');
+        $error = new \Illuminate\Http\Client\ConnectionException('cURL error 7: Failed to connect');
+        $this->assertStringContainsString('0.0.0.0', \App\Services\WhatsApp::connectionError($error));
+    }
+
     public function test_whatsapp_receipts_are_tenant_scoped_and_idempotent(): void
     {
+        Http::fake();
         $t = app(Tenant::class);
         $connection = $t->insert('whatsapp_connections', ['name' => 'Vendas', 'automatic' => true]);
         $t->update('customers', $this->customer, ['phone' => '(11) 99999-9999']);
@@ -69,7 +102,7 @@ class CommerceTest extends TestCase
         $this->assertDatabaseHas('whatsapp_messages', ['sale_id' => $id, 'connection_id' => $connection, 'recipient' => '5511999999999', 'status' => 'pending']);
         $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outro', 'slug' => 'outro-wa', 'modules' => $this->company->modules]);
         $foreign = DB::table('whatsapp_connections')->insertGetId(['company_id' => $other->id, 'name' => 'Privado']);
-        $this->get('/whatsapp/'.$foreign.'/status')->assertNotFound();
+        $this->getJson('/whatsapp/'.$foreign.'/status')->assertNotFound();
         $this->post('/whatsapp/'.$foreign, ['action' => 'automatic'])->assertNotFound();
         $staff = User::factory()->create(['company_id' => $this->company->id, 'role' => 'staff']);
         $this->actingAs($staff)->get('/whatsapp')->assertForbidden();
@@ -113,14 +146,16 @@ class CommerceTest extends TestCase
 
     public function test_whatsapp_retry_uses_corrected_phone_and_cancelled_sales_are_not_sent(): void
     {
+        Http::fake(['*' => Http::response([], 503)]);
         $t = app(Tenant::class);
         $t->insert('whatsapp_connections', ['name' => 'Vendas', 'automatic' => true]);
         $t->update('customers', $this->customer, ['phone' => '11999999999']);
         $id = app(Commerce::class)->sell($this->sale());
         $t->query('whatsapp_messages')->update(['status' => 'failed', 'attempts' => 10]);
         $t->update('customers', $this->customer, ['phone' => '21988888888']);
-        $this->post('/sales/'.$id.'/whatsapp')->assertRedirect();
-        $this->assertDatabaseHas('whatsapp_messages', ['recipient' => '5521988888888', 'attempts' => 0, 'status' => 'pending']);
+        Http::fake(['*' => Http::response([], 503)]);
+        $this->post('/sales/'.$id.'/whatsapp')->assertRedirect('/sales/'.$id);
+        $this->assertDatabaseHas('whatsapp_messages', ['recipient' => '5521988888888', 'attempts' => 1, 'status' => 'pending']);
         $t->query('sales')->where('id', $id)->update(['status' => 'cancelled']);
         Http::fake();
         $this->artisan('poseitech:whatsapp')->assertSuccessful();

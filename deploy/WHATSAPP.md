@@ -50,7 +50,9 @@ Sessões e chaves Signal são armazenadas em snapshots criptografados AES-256-GC
 2. No celular: WhatsApp → Dispositivos conectados → Conectar dispositivo.
 3. Aguarde **Conectado** e selecione **Usar para comprovantes**.
 4. Finalize uma venda com cliente identificado e telefone válido. O comprovante fica na fila sem depender da disponibilidade momentânea do WhatsApp.
-5. A tela da venda também oferece **Enviar WhatsApp** e **Enviar comprovante por e-mail**. O botão do WhatsApp recupera falhas; não duplica envios concluídos.
+5. A tela da venda também oferece **Enviar WhatsApp** e **Enviar comprovante por e-mail**. O botão do WhatsApp tenta enviar imediatamente, recupera falhas e mostra o resultado na venda; não duplica envios concluídos.
+
+A primeira tentativa automática é iniciada depois de salvar a venda e finalizar a resposta da página, sem exigir um worker de fila. O agendador continua necessário para recuperar falhas e processar pendências. As ações do menu retornam para páginas HTML; o JSON de status é usado somente pelas consultas em segundo plano.
 
 São feitas até 10 tentativas para indisponibilidade do serviço, número inválido ou bot desconectado. Depois de corrigir a causa, use o botão da venda para recolocar uma falha na fila. Vendas canceladas e clientes anonimizados não são enviados. Envios pendentes preservam o bot escolhido no momento da venda.
 

@@ -4,7 +4,7 @@
   if(document.hidden) return;
   await Promise.all([...document.querySelectorAll('[data-whatsapp-status]')].map(async card=>{
    const img=card.querySelector('[data-qr]');
-   try {const response=await fetch(card.dataset.whatsappStatus,{headers:{Accept:'application/json'},cache:'no-store'});const data=await response.json();card.querySelector('[data-state]').textContent=(labels[data.status]||'Indisponível')+(data.phone?' · '+data.phone:'');img.hidden=!data.qr;if(data.qr && /^data:image\/png;base64,/.test(data.qr)) img.src=data.qr;else img.removeAttribute('src');}
+   try {const response=await fetch(card.dataset.whatsappStatus,{headers:{Accept:'application/json','X-Requested-With':'XMLHttpRequest'},cache:'no-store'});const data=await response.json();card.querySelector('[data-state]').textContent=(data.message||labels[data.status]||'Indisponível')+(data.phone?' · '+data.phone:'');img.hidden=!data.qr;if(data.qr && /^data:image\/png;base64,/.test(data.qr)) img.src=data.qr;else img.removeAttribute('src');}
    catch{card.querySelector('[data-state]').textContent=labels.unavailable;img.hidden=true;img.removeAttribute('src');}
   }));
  }

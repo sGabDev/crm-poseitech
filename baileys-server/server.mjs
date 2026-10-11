@@ -11,6 +11,7 @@ import QRCode from 'qrcode';
 import pino from 'pino';
 import { Store } from './store.mjs';
 import { acquireServiceLock } from './lock.mjs';
+import { resolveDestination } from './destination.mjs';
 
 const token=process.env.WHATSAPP_SERVICE_TOKEN;
 const encryptionKey=process.env.WHATSAPP_SESSION_KEY;
@@ -83,11 +84,10 @@ async function send(key,data){
  // Durable reservation before network I/O prevents duplicate sends after retries/restarts.
  journal[id]={status:'sending',at:Date.now()};
  await store.write('messages.enc',journal);
- try {
-  const [result]=await s.socket.onWhatsApp(data.phone);
-  if(!result?.exists){delete journal[id];await store.write('messages.enc',journal);throw error(422,'Number is not registered');}
- }catch(e){if(e.status===422)throw e;delete journal[id];await store.write('messages.enc',journal);throw error(503,'Number lookup failed');}
- try{await s.socket.sendMessage(data.phone+'@s.whatsapp.net',{text:data.text});journal[id].status='sent';}
+ let destination;
+ try { destination=await resolveDestination(s.socket,data.phone); }
+ catch(e){delete journal[id];await store.write('messages.enc',journal);if(e.status===422)throw e;throw error(503,'Number lookup failed');}
+ try{await s.socket.sendMessage(destination,{text:data.text});journal[id].status='sent';}
  catch{journal[id].status='unknown';}
  await store.write('messages.enc',journal);return {status:journal[id].status};
 }

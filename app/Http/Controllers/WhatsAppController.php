@@ -31,17 +31,20 @@ class WhatsAppController extends Controller
         });
         $this->t->audit('whatsapp.created', 'whatsapp_connections', $id);
 
-        return back()->with('success', 'Bot criado. Clique em Conectar para gerar o QR code.');
+        return redirect('/whatsapp')->with('success', 'Bot criado. Clique em Conectar para gerar o QR code.');
     }
 
-    public function status(int $id)
+    public function status(Request $r, int $id)
     {
         Gate::authorize('manage-company');
         $this->t->find('whatsapp_connections', $id);
+        if (! $r->expectsJson()) {
+            return redirect('/whatsapp');
+        }
         try {
             return response()->json($this->wa->api($this->t->id(), $id, '', [], 'get'))->header('Cache-Control', 'no-store');
         } catch (\Throwable $e) {
-            return response()->json(['status' => 'unavailable', 'qr' => null], 503)->header('Cache-Control', 'no-store');
+            return response()->json(['status' => 'unavailable', 'qr' => null, 'message' => WhatsApp::connectionError($e)], 503)->header('Cache-Control', 'no-store');
         }
     }
 
@@ -61,19 +64,25 @@ class WhatsAppController extends Controller
             try {
                 $this->wa->api($this->t->id(), $id, '/'.$action);
             } catch (\Throwable $e) {
-                return back()->withErrors(['whatsapp' => 'Não foi possível acessar o serviço WhatsApp. Verifique se está em execução.']);
+                return redirect('/whatsapp')->withErrors(['whatsapp' => WhatsApp::connectionError($e)]);
             }
         }
         $this->t->audit('whatsapp.'.$action, 'whatsapp_connections', $id);
 
-        return back()->with('success', 'Configuração atualizada.');
+        return redirect('/whatsapp')->with('success', 'Configuração atualizada.');
     }
 
     public function receipt(int $id)
     {
         $this->t->authorize('sales', true);
-        $this->wa->queue($id,true);
+        $messageId = $this->wa->queue($id, true);
+        $message = $this->t->find('whatsapp_messages', $messageId);
+        $this->wa->send($message);
+        $result = $this->t->find('whatsapp_messages', $messageId);
+        if (in_array($result->status, ['pending', 'failed', 'unknown'])) {
+            return redirect('/sales/'.$id)->withErrors(['whatsapp' => $result->error ?? 'Envio pendente. Confira o histórico em WhatsApp · Bots.']);
+        }
 
-        return back()->with('success','Comprovante registrado na fila do WhatsApp. Envios já concluídos não são duplicados.');
+        return redirect('/sales/'.$id)->with('success', $result->status === 'sent' ? 'Comprovante enviado pelo WhatsApp.' : 'Comprovante em processamento.');
     }
 }

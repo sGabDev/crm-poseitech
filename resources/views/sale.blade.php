@@ -30,6 +30,9 @@
 <form method="post" action="{{ url('/sales/'.$sale->id.'/email') }}">@csrf<button class="secondary">Enviar comprovante por e-mail</button>
 </form>
 </div>
+@if($whatsappMessage ?? null)
+<p role="status">WhatsApp: {{ ['pending'=>'Na fila','sending'=>'Enviando','sent'=>'Enviado','failed'=>'Falhou','unknown'=>'Sem confirmação','cancelled'=>'Cancelado'][$whatsappMessage->status] ?? $whatsappMessage->status }}. {{ $whatsappMessage->error }}</p>
+@endif
 </section>
 <section class="card">
 <h2>Pagamentos</h2>@foreach($payments as $p)<div class="metric-row">

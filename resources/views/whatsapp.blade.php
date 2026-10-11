@@ -16,5 +16,5 @@
 <section class="card"><h2>Histórico de comprovantes</h2><p>Envios pendentes são processados automaticamente. “Sem confirmação” exige conferir a conversa no celular.</p><div class="table-wrap"><table><thead><tr><th>Venda</th><th>Telefone</th><th>Status</th><th>Detalhes</th></tr></thead><tbody>
 @forelse($messages as $message)<tr><td><a href="{{ url('/sales/'.$message->sale_id) }}">#{{ $message->sale_id }}</a></td><td>{{ $message->recipient }}</td><td>{{ ['pending'=>'Na fila','sending'=>'Enviando','sent'=>'Enviado','failed'=>'Falhou','unknown'=>'Sem confirmação','cancelled'=>'Cancelado'][$message->status] ?? $message->status }}</td><td>{{ $message->error ?? $message->sent_at }}</td></tr>@empty<tr><td colspan="4">Nenhum envio registrado.</td></tr>@endforelse
 </tbody></table></div>{{ $messages->links() }}</section>
-<script src="{{ asset('assets/whatsapp.js') }}" defer></script>
+<script src="{{ asset('assets/whatsapp.js') }}?v={{ filemtime(public_path('assets/whatsapp.js')) }}" defer></script>
 @endsection

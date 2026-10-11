@@ -208,7 +208,12 @@ class Commerce
                 $this->t->insert('email_logs', ['sale_id' => $saleId, 'customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Comprovante da compra #'.$saleId.' · '.$this->t->company->name, 'body' => 'Olá, '.$customer->name.'. Sua compra #'.$saleId.' foi registrada. Total: '.Tenant::money($total).'.']);
             }
 
-            app(WhatsApp::class)->queue($saleId);
+            if ($messageId = app(WhatsApp::class)->queue($saleId)) {
+                $companyId = $this->t->id();
+                DB::afterCommit(function () use ($companyId, $messageId) {
+                    \App\Jobs\SendWhatsAppReceipt::dispatchAfterResponse($companyId, $messageId);
+                });
+            }
 
             return $saleId;
         }, 3);

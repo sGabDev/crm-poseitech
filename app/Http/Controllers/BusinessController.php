@@ -77,7 +77,7 @@ class BusinessController extends Controller
         $this->t->authorize('sales');
         $sale = $this->t->find('sales', $id);
 
-        return view('sale', ['sale' => $sale, 'items' => $this->t->query('sale_items')->where('sale_id', $id)->get(),
+        return view('sale', ['sale' => $sale, 'whatsappMessage' => $this->t->query('whatsapp_messages')->where('sale_id', $id)->first(), 'items' => $this->t->query('sale_items')->where('sale_id', $id)->get(),
             'payments' => $this->t->query('payments')->where('sale_id', $id)->get(), 'accounts' => $this->t->query('accounts')->where('sale_id', $id)->get(),
             'customer' => $sale->customer_id ? $this->t->find('customers', $sale->customer_id) : null]);
     }

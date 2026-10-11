@@ -44,7 +44,7 @@ No servidor do CRM:
 php artisan config:clear
 ```
 
-Mantenha o agendador Laravel funcionando no servidor do CRM. Ele processa a fila de comprovantes e envia as solicitações para este serviço. Não execute PHP ou o agendador no servidor Baileys.
+Mantenha o agendador Laravel funcionando no servidor do CRM. A primeira tentativa ocorre após a venda; o agendador recupera as tentativas que falharem. O botão de envio na venda também tenta imediatamente e mostra o resultado. Não execute PHP ou o agendador no servidor Baileys.
 
 Depois, no CRM: **WhatsApp · Bots → Criar bot → Conectar / Gerar QR code**. Escaneie pelo WhatsApp do celular e escolha **Usar para comprovantes**. Cada empresa usa suas próprias conexões no mesmo serviço.
 

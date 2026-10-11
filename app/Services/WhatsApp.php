@@ -10,6 +10,35 @@ class WhatsApp
 {
     public function __construct(public Tenant $t) {}
 
+    public static function connectionError(\Throwable $error): string
+    {
+        if ($error instanceof \Illuminate\Http\Client\RequestException) {
+            return match ($error->response->status()) {
+                401 => 'Token recusado pelo Baileys. Configure o mesmo WHATSAPP_SERVICE_TOKEN nos dois servidores e limpe o cache de configuração do CRM.',
+                403 => 'O servidor Baileys bloqueou o acesso. Verifique as regras do proxy e a liberação do IP do CRM.',
+                404 => 'A URL não aponta para a API Baileys. Confira WHATSAPP_SERVICE_URL e o encaminhamento do proxy.',
+                409 => 'O bot está desconectado. Reconecte o WhatsApp antes de enviar.',
+                422 => 'O número do cliente não foi reconhecido pelo WhatsApp. Confira o DDD e o telefone cadastrado.',
+                default => 'O serviço Baileys respondeu com erro HTTP '.$error->response->status().'. Consulte o console da hospedagem.',
+            };
+        }
+        if ($error instanceof \Illuminate\Http\Client\ConnectionException) {
+            if (str_contains($error->getMessage(), 'cURL error 7')) {
+                return 'Conexão recusada pelo servidor Baileys. Inicie o serviço e confira WHATSAPP_SERVICE_HOST=0.0.0.0 e a porta atribuída no painel da hospedagem.';
+            }
+            if (str_contains($error->getMessage(), 'cURL error 60')) {
+                return 'O certificado HTTPS do servidor Baileys não pôde ser validado. Corrija o certificado do domínio.';
+            }
+
+            return 'Não foi possível alcançar o servidor Baileys. Confira endereço, DNS, porta e firewall entre os servidores.';
+        }
+        if (! config('whatsapp.token')) {
+            return 'Configure WHATSAPP_SERVICE_TOKEN no CRM e execute php artisan config:clear.';
+        }
+
+        return 'Resposta inválida do serviço Baileys. Confira se a URL aponta para a API e consulte o console da hospedagem.';
+    }
+
     public function api(int $company, int $connection, string $action = '', array $data = [], string $method = 'post'): array
     {
         if (! config('whatsapp.token')) {
@@ -82,7 +111,7 @@ class WhatsApp
             $q->update(['status' => $state === 'sent' ? 'sent' : 'unknown', 'sent_at' => $state === 'sent' ? now() : null, 'error' => $state === 'sent' ? null : 'Envio sem confirmação. Confira no celular antes de reenviar.', 'updated_at' => now()]);
         } catch (\Throwable $e) {
             $attempts = $message->attempts + 1;
-            $q->update(['status' => $attempts >= 10 ? 'failed' : 'pending', 'attempts' => $attempts, 'error' => 'Serviço indisponível ou bot desconectado.', 'updated_at' => now()]);
+            $q->update(['status' => $attempts >= 10 ? 'failed' : 'pending', 'attempts' => $attempts, 'error' => self::connectionError($e), 'updated_at' => now()]);
         }
     }
 }
