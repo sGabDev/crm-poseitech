@@ -1,88 +1,117 @@
-# Instalação na Hostinger
+# Implantação em hospedagem compartilhada
 
-## PHP 8.3 no hPanel, mas PHP 8.1 no terminal
+Este guia descreve o uso de `scripts/hostinger.php`, incluído no projeto para instalações de produção com MySQL/MariaDB e HTTPS. O script contém autodetecção de caminhos PHP da Hostinger; não é um instalador universal para SQLite ou desenvolvimento local. Para Windows, Linux, macOS, servidores próprios e contêineres, use o procedimento geral do [README](../README.md).
 
-A versão do site e a versão do SSH são independentes. Envie o `scripts/hostinger.php` atualizado: quando iniciado em PHP antigo, ele procura o PHP 8.3, 8.4 ou 8.2 nos caminhos da Hostinger e reinicia automaticamente, se a hospedagem permitir iniciar processos.
+Todos os domínios, e-mails e caminhos dos exemplos são ilustrativos. Substitua-os pelos valores do ambiente. Execute os comandos na pasta que contém `artisan`. `php` deve apontar para um executável compatível com `composer.lock`; `composer` deve utilizar esse mesmo PHP.
 
-Para usar diretamente o PHP 8.3, sem depender do comando `php` do terminal:
+## PHP do site e do terminal
 
-```sh
-cd /home/u382808979/domains/crm.poseitech.com.br/public_html
-/opt/alt/php83/usr/bin/php scripts/hostinger.php --php-info
-/opt/alt/php83/usr/bin/php scripts/hostinger.php --install
-```
-
-Se o `.env` estiver ausente, `--install` cria um modelo de produção e para. Abra o arquivo **oculto** `.env` na pasta indicada, preencha `APP_URL=https://crm.poseitech.com.br` e as credenciais reais do MySQL do hPanel; repita o último comando. Modelos incompletos não executam migrations. Um `.env` existente nunca é sobrescrito.
-
-Em uma instalação que já tinha dados, restaure o `.env` original e sua APP_KEY. `--fix-key` não cria um `.env` novo automaticamente; `--init-env` prepara um modelo para uma instalação nova. O arquivo é procurado ao lado de `artisan`, tanto em `public_html` quanto na estrutura privada `poseitech`.
-
-Use `/opt/alt/php83/usr/bin/php` também nos comandos Artisan e no cron. Se esse executável não existir, use o caminho compatível informado pelo instalador ou confirme o caminho com a hospedagem. Não reduza a exigência de PHP do Laravel para 8.1.
-
-[A Hostinger explica a diferença entre o PHP do site e o PHP do SSH/Composer](https://www.hostinger.com/support/5792082-how-to-solve-common-composer-issues-at-hostinger/).
-
-## Composer informa dezenas de incompatibilidades com PHP 8.1
-
-Todos esses erros têm a mesma causa: `composer install` está sendo executado pelo PHP 8.1 do terminal. Use explicitamente o PHP 8.3 também para o Composer:
+Selecione PHP 8.2 ou superior no painel e confira a versão do terminal:
 
 ```sh
-cd /home/u382808979/domains/crm.poseitech.com.br/public_html
-/opt/alt/php83/usr/bin/php -v
-/opt/alt/php83/usr/bin/php /usr/local/bin/composer2 install --no-dev --optimize-autoloader
-/opt/alt/php83/usr/bin/php scripts/hostinger.php --install
+php -v
+php --ini
+composer --version
 ```
 
-Se `/usr/local/bin/composer2` não existir e você tiver enviado o arquivo `composer.phar` para a pasta do projeto, substitua somente a linha do Composer por:
+A seleção no painel pode não alterar o PHP do SSH. Se houver diferença, use o caminho do executável fornecido pela hospedagem em todos os comandos de Composer, Artisan, instalador e agendamento. Com Composer em PHAR, use esse PHP para executar `composer.phar`.
+
+Quando iniciado com PHP anterior a 8.2, o instalador tenta localizar executáveis compatíveis nos caminhos previstos pelo script e reiniciar, se a execução de processos for permitida. Isso não altera o PHP global do terminal. Não reduza a versão exigida pelo projeto nem use `--ignore-platform-reqs` para contornar incompatibilidades.
+
+## Organização das pastas
+
+Prefira manter a aplicação fora da raiz pública e apontar o domínio para o diretório `public/` do projeto.
+
+Quando a hospedagem exigir uma pasta pública separada, `public/index.php` também reconhece esta estrutura específica:
+
+```text
+pasta-do-site/
+├── poseitech/          # aplicação: artisan, app, bootstrap, vendor, .env etc.
+└── public_html/        # conteúdo de public/, incluindo index.php e .htaccess
+```
+
+Nessa alternativa, `poseitech` é o nome esperado pelo código, não um nome arbitrário. As pastas ficam no mesmo nível. Publique também arquivos ocultos, como `.htaccess`. Use um domínio dedicado e preserve arquivos de outros sites.
+
+## Instalação nova
+
+1. Configure PHP e extensões conforme o README, incluindo `pdo_mysql`. Garanta escrita em `storage/` e `bootstrap/cache/` pelo usuário da aplicação.
+2. Publique o projeto completo na estrutura escolhida. Instale as dependências na raiz da aplicação:
 
 ```sh
-/opt/alt/php83/usr/bin/php composer.phar install --no-dev --optimize-autoloader
+composer install --no-dev --optimize-autoloader
+composer check-platform-reqs --no-dev
 ```
 
-Não edite o código de `composer.phar`, não execute `composer update` para contornar esse erro e não use `--ignore-platform-reqs`: o projeto e suas dependências precisam realmente executar em PHP 8.2+. A autodetecção de versão de `scripts/hostinger.php` vale para esse script; ela não muda o comando global `composer` do SSH.
-
-## Correção da instalação atual: APP_KEY ausente
-
-O log informado mostra `MissingAppKeyException`. Envie o arquivo atualizado `scripts/hostinger.php` para a instalação e execute no terminal:
+3. Crie uma base MySQL/MariaDB e um usuário autorizado. Inicialize o modelo de ambiente:
 
 ```sh
-cd /home/u382808979/domains/crm.poseitech.com.br/public_html
-/opt/alt/php83/usr/bin/php scripts/hostinger.php --fix-key
+php scripts/hostinger.php --init-env
 ```
 
-O comando limpa caches gerados, mantém qualquer chave já existente no `.env` e gera uma apenas quando estiver ausente. Não altera banco, usuários, senhas ou credenciais. Se a empresa já usou criptografia em outra instalação, restaure sua APP_KEY original antes de executá-lo. Não publique a chave nem copie uma chave de exemplo compartilhada.
+Se não existir `.env`, o script cria um modelo e encerra sem alterar o banco. Um arquivo existente é preservado. Habilite a exibição de arquivos ocultos no gerenciador para editá-lo.
 
-Sem o script, use `php artisan config:clear`, confira o campo `APP_KEY` no `.env`, execute `php artisan key:generate --force` **somente se estiver vazio** e finalize com `php artisan config:cache`.
-
-## Nova instalação / organização das pastas
-
-Use `poseitech/` para a aplicação privada e `public_html/` para o conteúdo de `public/`, mantendo as duas pastas no mesmo nível. O `public/index.php` atualizado reconhece essa estrutura e também a estrutura Laravel original. Não remova arquivos de outro site: use um domínio/subdomínio dedicado.
-
-1. Selecione PHP **8.2 ou superior** no hPanel, com `pdo_mysql`, `mbstring`, `fileinfo`, `openssl`, `dom` e `xml` habilitados. Use a mesma versão no terminal.
-2. Crie um banco MySQL e usuário no hPanel. Copie `poseitech/.env.example` para `poseitech/.env` e preencha domínio HTTPS e dados reais do banco. Se já existe uma instalação com dados, **preserve a APP_KEY existente** e suas credenciais.
-3. No terminal SSH, entre em `poseitech` e execute:
+4. Preencha `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL` com o domínio HTTPS real, `SESSION_SECURE_COOKIE=true` e as credenciais reais do banco. O arquivo [hostinger.env.example](hostinger.env.example) é um modelo, não uma configuração pronta. Ajuste SMTP e demais serviços para esse ambiente.
+5. Confira que o banco selecionado é o correto e execute:
 
 ```sh
-/opt/alt/php83/usr/bin/php scripts/hostinger.php --install
-/opt/alt/php83/usr/bin/php artisan poseitech:admin seu@email.com
+php scripts/hostinger.php --install
+php artisan poseitech:admin admin@example.com
 ```
 
-O primeiro comando verifica requisitos, cria somente pastas necessárias, remove caches gerados, gera a chave apenas se estiver ausente, aplica migrations sem apagar registros, cria planos iniciais e recompila caches no servidor. Antes dele, instale as dependências usando o comando com PHP 8.3 da seção Composer acima, ou envie a pasta `vendor` completa. Não é necessário Node ou Vite.
+Substitua o e-mail de exemplo. O instalador verifica requisitos, prepara diretórios necessários, remove caches gerados, gera a chave apenas se ausente, aplica migrations, inicializa planos e recompila caches de rotas e views. Não é necessário Node.js ou Vite para servir a aplicação.
 
-4. Abra seu domínio e use **Começar agora**. Configure um cron a cada minuto com o caminho absoluto do PHP e de `poseitech/artisan schedule:run`. Configure SMTP antes de usar e-mails; `MAIL_MAILER=log` não envia mensagens reais.
+6. Abra o domínio, confira a página de login e cadastre a empresa em `/register`. Configure a execução de `artisan schedule:run` a cada minuto com os caminhos reais do PHP e da aplicação, conforme o README. Teste banco, SMTP e tarefas agendadas no ambiente de destino.
 
-## Se continuar aparecendo 500
+Sem SSH ou terminal, a instalação e os comandos administrativos precisam ser executados pelo responsável pela hospedagem ou por um processo de implantação compatível. Não há instalador web público. Se enviar `vendor/` preparado em outro ambiente, ele deve atender ao PHP e às extensões do destino; não envie caches locais.
 
-Execute `php scripts/hostinger.php` e consulte o final de `poseitech/storage/logs/laravel-AAAA-MM-DD.log` (ou `laravel.log`) e o log PHP do hPanel. Mantenha `APP_DEBUG=false` no site. Envie somente o tipo/mensagem do erro, ocultando senhas, tokens e dados de clientes.
+## Atualizar uma instalação existente
 
-`storage/` e `bootstrap/cache/` precisam permitir escrita pelo usuário da hospedagem. Não use 777. Não envie o `.env`, banco SQLite ou caches do computador local. Se a mensagem mencionar `C:\xampp`, há cache local indevido no servidor: execute novamente a instalação acima.
+Faça backup do banco, uploads e configurações, incluindo a `APP_KEY`. Publique uma versão completa do projeto e preserve os arquivos próprios da instalação. Não siga as listas de arquivos das notas históricas como um pacote completo de atualização.
 
-Sem acesso SSH, os comandos precisam ser executados pelo terminal disponibilizado no seu plano ou pelo responsável pela hospedagem. Não há instalador web público que exponha comandos administrativos.
+Execute na raiz da aplicação:
 
-Referência: [estrutura de implantação indicada pela Hostinger](https://www.hostinger.com/br/support/6152127-como-implantar-deploy-o-laravel-8-na-hostinger/). Este projeto utiliza Laravel 12, portanto requer PHP 8.2+.
-# Atualização: fiado por cliente
+```sh
+composer install --no-dev --optimize-autoloader
+composer check-platform-reqs --no-dev
+php scripts/hostinger.php --install
+php artisan migrate:status
+```
 
-## Comprovantes automáticos e salvamento conjunto de categorias
+O instalador executa migrations e seeders: revise as mudanças da versão e o banco configurado antes de usá-lo. Não use `migrate:fresh` em uma base com dados. Preserve a chave original, inclusive ao transferir a aplicação entre servidores. Para implantação sem esse script, siga os comandos gerais do README.
 
-Envie a migração `2026_09_28_000004_automatic_sale_receipts.php`, os templates `resources/views/emails/receipt.blade.php` e `receipt-text.blade.php` e os demais arquivos alterados. Execute `migrate --force` com PHP 8.3 e limpe os caches.
+## Chave da aplicação ausente
+
+Se os logs mostrarem `MissingAppKeyException`, confira o `.env` na pasta do `artisan`. Em uma instalação que já possui dados criptografados, restaure a `APP_KEY` original antes de prosseguir.
+
+```sh
+php scripts/hostinger.php --fix-key
+```
+
+O comando mantém uma chave existente, gera uma somente quando ausente e remove caches gerados. Não executa migrations. Se o `.env` não existir, ele orienta a restaurá-lo ou inicializá-lo; não cria um ambiente novo automaticamente com essa opção.
+
+Sem o script, execute `php artisan config:clear`, verifique a chave e use `php artisan key:generate --force` somente em uma instalação nova que ainda não tenha chave. Recompile o cache de configuração após concluir os ajustes.
+
+## Diagnóstico de erro 500
+
+Execute `php scripts/hostinger.php` para verificar a instalação de produção, incluindo conexão e tabelas. Consulte `storage/logs/laravel.log`, arquivos diários se esse canal estiver configurado e os logs de PHP/servidor da hospedagem.
+
+- `vendor/autoload.php` ausente: instale as dependências com Composer na pasta da aplicação.
+- PHP incompatível: alinhe o executável do terminal ao utilizado pelo site.
+- Tabelas ou colunas ausentes: publique todas as migrations da versão e confira `php artisan migrate:status`.
+- Caminhos de outro ambiente: limpe caches de configuração, rotas e views e gere-os no destino.
+- Falha de escrita: ajuste proprietário e permissões de `storage/` e `bootstrap/cache/`, sem permissões 777.
+
+Mantenha `APP_DEBUG=false` em produção. Não exponha `.env`, backups ou banco na pasta pública; oculte credenciais e dados de clientes ao compartilhar logs.
+
+## Notas históricas de funcionalidades
+
+As seções abaixo registram mudanças de versões anteriores. As instruções de implantação e atualização acima são as vigentes; referências a arquivos individuais ou à ausência de migrations valem somente para a mudança descrita. Publique sempre a versão completa e aplique todas as migrations pendentes. Nas notas, `php` representa o executável compatível escolhido para o ambiente.
+
+## Histórico: fiado por cliente
+
+### Comprovantes automáticos e salvamento conjunto de categorias
+
+Envie a migração `2026_09_28_000004_automatic_sale_receipts.php`, os templates `resources/views/emails/receipt.blade.php` e `receipt-text.blade.php` e os demais arquivos alterados. Execute `migrate --force` com o PHP compatível do ambiente e limpe os caches.
 
 Cada venda concluída com cliente que tenha e-mail válido cria um comprovante na fila, mesmo sem consentimento para mensagens promocionais: é uma comunicação sobre a própria compra. A venda e o registro da fila são gravados juntos, e repetir a mesma venda não duplica o e-mail. Vendas sem cliente ou sem e-mail continuam funcionando, sem envio. Falhas de SMTP não desfazem a venda; use a fila para tentar novamente.
 
@@ -90,13 +119,13 @@ O envio automático é realizado pelo cron existente (`schedule:run` a cada minu
 
 O portal permanece limitado ao mês selecionado, mesmo que uma URL antiga contenha `scope=all`. As duas listas de categorias são salvas juntas pelo botão **Salvar todas as categorias**; um erro em qualquer lista impede alterações parciais.
 
-## Categorias por direção, indicadores do fiado e comprovantes
+### Categorias por direção, indicadores do fiado e comprovantes
 
 Esta atualização não exige migração. Envie todos os arquivos alterados e limpe os caches de views/configuração. As listas de categorias agora são configuradas separadamente para entradas e saídas. Listas personalizadas da versão anterior são preservadas inicialmente nas duas direções; ajuste cada lista em **Configurar categorias da empresa**. Categorias históricas continuam nos filtros mesmo depois de removidas das opções de cadastro.
 
-Os cartões por forma de pagamento mostram também a diferença entre recebido e gasto. O portal permite filtrar as compras pelo mês ou por todo o histórico, por fiado/quitadas/saldo da conta, status e número. Os indicadores mostram o fiado original das compras do mês, o restante dessas compras e o total de fiado em aberto; a seleção da lista não altera esses indicadores. Comprovantes identificam o valor pago com saldo da conta e sua devolução quando a venda é cancelada.
+Os cartões por forma de pagamento mostram também a diferença entre recebido e gasto. Nesta versão histórica, o portal permitia filtrar por todo o histórico; versões posteriores restringiram a listagem ao mês selecionado, conforme descrito acima. Os indicadores mostram o fiado original das compras do mês, o restante dessas compras e o total de fiado em aberto; a seleção da lista não altera esses indicadores. Comprovantes identificam o valor pago com saldo da conta e sua devolução quando a venda é cancelada.
 
-## Datas retroativas, categorias e portal permanente
+### Datas retroativas, categorias e portal permanente
 
 Esta atualização não exige migração adicional. Envie os arquivos novos `app/Services/FlowCategories.php` e `app/Services/PortalLink.php`, além dos arquivos alterados, e limpe os caches de rotas, views e configuração.
 
@@ -106,7 +135,7 @@ Os links do portal não expiram, aparecem no perfil e podem ser revogados. Links
 
 O portal mostra uma tabela de compras por mês, com número, valor e comprovante. Somente contas ainda em aberto aparecem em **Valores pendentes**, incluindo dívidas de meses anteriores. Créditos, cashback, saldo e extrato não são exibidos no portal; os registros permanecem preservados no sistema.
 
-## SMTP Gmail, extrato agrupado e caixa obrigatório
+### SMTP Gmail, extrato agrupado e caixa obrigatório
 
 Envie também `public/assets/layout-fixes.css`, `app/Services/CompanySmtp.php` e `resources/views/components/flow-statement.blade.php`, junto com os demais arquivos alterados. Limpe as views e configurações após atualizar. Esta etapa não cria novas tabelas.
 
@@ -114,9 +143,9 @@ Gmail: use `smtp.gmail.com`, e-mail completo como usuário, senha de aplicativo 
 
 Toda nova venda exige caixa aberto, inclusive Pix, cartão, fiado e saldo do cliente. Caixa é uma dependência obrigatória de Vendas. O extrato e o CSV têm uma linha por dia e forma de pagamento no fuso da empresa; a diferença corresponde às entradas menos as saídas daquele grupo. Abra o modo para conferir separadamente as origens das entradas e saídas.
 
-## Depósitos, fluxo de caixa, equipe e fila de e-mails
+### Depósitos, fluxo de caixa, equipe e fila de e-mails
 
-Envie a migração `2026_09_28_000003_wallet_flow_and_team.php` junto com os novos controllers, serviços, views, rotas e arquivos `public/assets`. Execute `migrate --force` e limpe os caches com PHP 8.3 conforme os comandos abaixo. A aplicação avisa quando o banco ainda não recebeu a atualização.
+Envie a migração `2026_09_28_000003_wallet_flow_and_team.php` junto com os novos controllers, serviços, views, rotas e arquivos `public/assets`. Execute `migrate --force` e limpe os caches com o PHP compatível do ambiente conforme os comandos abaixo. A aplicação avisa quando o banco ainda não recebeu a atualização.
 
 - Em Nova venda, selecione **Depósito na conta do cliente**. O depósito quita primeiro os fiados mais antigos e mantém o excedente como saldo para compras futuras. Depósitos não contam como vendas; o uso do saldo não duplica entradas no fluxo. O cancelamento da compra devolve a parte paga com saldo à conta do cliente.
 - **Fluxo de caixa** mostra o mês, saldo anterior/final, entradas, saídas, estornos, caixas e formas de pagamento, com extrato e CSV. Registre retiradas, despesas, aportes e o saldo inicial diretamente nessa tela. A abertura diária de caixa não é receita e não entra novamente no fluxo. O saldo considera apenas movimentações registradas no sistema; retiradas diretas não alteram o caixa operacional.
@@ -124,7 +153,7 @@ Envie a migração `2026_09_28_000003_wallet_flow_and_team.php` junto com os nov
 - Em Configurações, a fila permite enviar uma mensagem, tentar todas as pendentes/falhas ou cancelar a fila. Para enviar todas, mantenha a página aberta. O cron `poseitech:mail` continua processando pendentes automaticamente. A limpeza preserva o histórico e não interrompe mensagens já em envio. Uma falha de rede após aceitação pelo SMTP pode deixar o resultado incerto; confira com o destinatário antes de repetir uma mensagem nessa situação.
 
 
-Se Produtos ou Equipe exibirem `Unknown column 'deleted_at'` ou `Unknown column 'must_change_password'`, envie também o arquivo `database/migrations/2026_09_28_000002_password_and_product_deletion.php` antes de executar os comandos abaixo. Esses erros indicam banco sem a migração correspondente. A migração aceita uma execução anterior parcialmente concluída, sem recriar colunas existentes. Confirme com `php artisan migrate:status`, usando o mesmo executável PHP 8.3 abaixo. Não use `migrate:fresh` em produção.
+Se Produtos ou Equipe exibirem `Unknown column 'deleted_at'` ou `Unknown column 'must_change_password'`, envie também o arquivo `database/migrations/2026_09_28_000002_password_and_product_deletion.php` antes de executar os comandos abaixo. Esses erros indicam banco sem a migração correspondente. A migração aceita uma execução anterior parcialmente concluída, sem recriar colunas existentes. Confirme com `php artisan migrate:status`, usando o mesmo executável PHP compatível. Não use `migrate:fresh` em produção.
 
 Envie também `public/assets/app.js`, `public/assets/app.css` e as views atualizadas. O layout inclui uma versão nos endereços desses arquivos para que o navegador carregue a busca e a máscara novas.
 
@@ -133,24 +162,24 @@ As atualizações seguintes também incluem exclusão de produtos preservando o 
 Depois de enviar os arquivos atualizados, execute na pasta que contém `artisan`:
 
 ```bash
-/opt/alt/php83/usr/bin/php artisan migrate --force
-/opt/alt/php83/usr/bin/php artisan config:clear
-/opt/alt/php83/usr/bin/php artisan route:clear
-/opt/alt/php83/usr/bin/php artisan view:clear
+php artisan migrate --force
+php artisan config:clear
+php artisan route:clear
+php artisan view:clear
 ```
 
 A migração mantém as vendas e os pagamentos existentes e prepara o saldo devedor por cliente. Clientes existentes recebem dia de vencimento 5; ajuste no cadastro quando necessário. Nos meses sem o dia escolhido (por exemplo, 31), o vencimento usa o último dia do mês. Preserve o `.env` e a `APP_KEY` atuais.
 
 
-## Atualização: vendas, recompensas e catálogo (29/09)
+### Atualização: vendas, recompensas e catálogo (29/09)
 
 Envie todos os arquivos alterados, incluindo `database/migrations/2026_09_29_000001_catalog_and_coupon_rewards.php`, `public/assets/catalog.css` e `public/assets/catalog.js`. Na pasta do `artisan`, execute:
 
 ```bash
-/opt/alt/php83/usr/bin/php artisan migrate --force
-/opt/alt/php83/usr/bin/php artisan config:clear
-/opt/alt/php83/usr/bin/php artisan route:clear
-/opt/alt/php83/usr/bin/php artisan view:clear
+php artisan migrate --force
+php artisan config:clear
+php artisan route:clear
+php artisan view:clear
 ```
 
 - **Venda:** marque Item avulso para informar nome, preço e quantidade sem criar cadastro. O leitor deve operar como teclado e finalizar com Enter; mantenha o foco em Leitor de barras. O campo Código do produto deve conter o código lido e ser exclusivo entre produtos ativos. Leituras repetidas somam a quantidade por leitura. Venda sem estoque exige confirmação e gera auditoria; o estoque pode ficar negativo para reposição posterior.
@@ -159,9 +188,9 @@ Envie todos os arquivos alterados, incluindo `database/migrations/2026_09_29_000
 - **Catálogo:** em Configurações, personalize cor, título e apresentação, copie o link e habilite pedidos online. Requer módulo Pedidos. O carrinho envia uma solicitação, sem cobrar ou reservar estoque. Na tela Pedidos, confira os dados e registre a venda; selecione/cadastre o cliente se necessário e confirme os preços atuais com ele. O caixa precisa estar aberto. Frete e pagamento são combinados no atendimento. Pedidos online duplicados não geram duas vendas.
 
 
-## Cupons em tempo real e histórico do catálogo
+### Cupons em tempo real e histórico do catálogo
 
-Envie também a migração `2026_09_29_000002_coupon_products_and_catalog_history.php`, os novos controllers/partials e os assets atualizados. Execute `migrate --force`, `config:clear`, `route:clear` e `view:clear` com `/opt/alt/php83/usr/bin/php` na pasta do `artisan`.
+Envie também a migração `2026_09_29_000002_coupon_products_and_catalog_history.php`, os novos controllers/partials e os assets atualizados. Execute `migrate --force`, `config:clear`, `route:clear` e `view:clear` com `php` na pasta do `artisan`.
 
 - Cupons são validados automaticamente ao digitar e ao mudar cliente, itens ou desconto. A prévia não consome usos; o fechamento valida novamente. Produto grátis abate o preço-base de uma unidade do produto configurado, que deve estar na venda. Adicionais são cobrados. Valor e percentual continuam disponíveis. A listagem mostra validade, status e quantidade de usos, com filtros.
 - Para alterar o endereço do catálogo, o suporte entra na empresa e acessa Configurações > Catálogo > Link do catálogo. O link antigo deixa de funcionar; o novo deve ser compartilhado. A permissão é validada no servidor e a alteração é auditada.
@@ -169,8 +198,8 @@ Envie também a migração `2026_09_29_000002_coupon_products_and_catalog_histor
 - Meus pedidos usa um cookie privado persistente por empresa. Mostra os pedidos feitos neste navegador após esta atualização, os estados registrado/cancelado e o andamento em Pedidos. Não recupera compras antigas sem esse identificador, nem compartilha histórico entre dispositivos ou após limpeza dos cookies. A página retorna `Cache-Control: private, no-store`; mantenha o cache de página/CDN desabilitado para `/catalog/*` para não compartilhar dados de visitantes.
 
 
-## Layout do catálogo e de Nova Venda
+### Layout do catálogo e de Nova Venda
 
 Esta revisão reorganiza o catálogo em formato de cardápio com categorias, produtos compactos, sacola lateral e identificação na etapa de finalizar. Nova Venda separa cliente, itens e pagamento; campos opcionais ficam em seções expansíveis. Pedidos do catálogo mostra apenas solicitações pendentes sem venda registrada, preservando o histórico dos demais pedidos.
 
-Envie as views, `app/Http/Controllers/BusinessController.php`, `public/assets/catalog.css`, `public/assets/catalog.js` e o novo `public/assets/sale.css`. Execute `/opt/alt/php83/usr/bin/php artisan view:clear`. Esta revisão de layout não acrescenta migrações; as migrações anteriores continuam necessárias caso ainda não tenham sido aplicadas.
+Envie as views, `app/Http/Controllers/BusinessController.php`, `public/assets/catalog.css`, `public/assets/catalog.js` e o novo `public/assets/sale.css`. Execute `php artisan view:clear`. Esta revisão de layout não acrescenta migrações; as migrações anteriores continuam necessárias caso ainda não tenham sido aplicadas.

@@ -25,6 +25,7 @@
 <section class="card">@include('components.items')<p>Desconto: {{ \App\Services\Tenant::money($sale->discount) }} · Acréscimos: {{ \App\Services\Tenant::money($sale->extra) }}</p>
 <p>{{ $sale->notes }}</p>
 <div class="actions">
+<form method="post" action="{{ url('/sales/'.$sale->id.'/whatsapp') }}">@csrf<button class="secondary">Enviar WhatsApp</button></form>
 <a class="button secondary" href="https://wa.me/?text={{ rawurlencode('Comprovante de compra: '.url('/receipt/'.$sale->receipt_hash)) }}" target="_blank" rel="noopener">Compartilhar por WhatsApp</a>
 <form method="post" action="{{ url('/sales/'.$sale->id.'/email') }}">@csrf<button class="secondary">Enviar comprovante por e-mail</button>
 </form>

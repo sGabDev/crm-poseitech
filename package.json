@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "check": "node scripts/check.cjs",
-    "test": "node scripts/check.cjs --test"
+    "test": "node scripts/check.cjs --test",
+    "whatsapp": "node services/whatsapp/server.mjs",
+    "test:whatsapp": "node baileys-server/store.test.mjs"
   }
 }

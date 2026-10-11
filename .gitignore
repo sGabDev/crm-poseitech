@@ -25,3 +25,6 @@ Thumbs.db
 /composer.phar
 /database/*.sqlite*
 /.runtime
+
+/storage/app/private/whatsapp/
+/baileys-server.zip

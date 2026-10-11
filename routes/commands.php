@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Services\Analytics;
 use App\Services\MailQueue;
 use App\Services\Tenant;
+use App\Services\WhatsApp;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
@@ -88,3 +89,17 @@ Artisan::command('poseitech:mail {--limit=50}', function () {
 });
 Schedule::command('poseitech:automate')->dailyAt('06:00')->withoutOverlapping();
 Schedule::command('poseitech:mail')->everyMinute()->withoutOverlapping();
+
+Artisan::command('poseitech:whatsapp {--limit=50}', function () {
+    DB::table('whatsapp_messages')->where('status', 'sending')->where('updated_at', '<', now()->subMinutes(2))->update(['status' => 'pending', 'updated_at' => now()]);
+    foreach (DB::table('whatsapp_messages')->where('status', 'pending')->orderBy('id')->limit(max(1, min(500, (int) $this->option('limit'))))->get() as $message) {
+        $company = Company::with('plan')->find($message->company_id);
+        if (! $company || ! $company->available()) {
+            continue;
+        }
+        app(Tenant::class)->company = $company;
+        app(WhatsApp::class)->send($message);
+    }
+    $this->info('Fila WhatsApp processada.');
+});
+Schedule::command('poseitech:whatsapp')->everyTenSeconds()->withoutOverlapping();

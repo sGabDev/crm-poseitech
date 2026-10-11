@@ -33,6 +33,7 @@
 <span class="nav-symbol">{{ $symbol }}</span>{{ $label }}</a>@endif
 @endforeach
 @can('manage-company')<span class="nav-label">GERENCIAR</span>
+<a href="{{ url('/whatsapp') }}">WhatsApp ? Bots</a>
 <a href="{{ url('/alerts') }}">Notificações</a>
 @endcan
 <a href="{{ url('/settings') }}">Configurações</a>

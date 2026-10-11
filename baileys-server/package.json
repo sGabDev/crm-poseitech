@@ -1,0 +1,23 @@
+{
+  "name": "poseitech-baileys-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent multi-company WhatsApp service for PoseiTech CRM",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check store.mjs",
+    "test": "node tests.mjs",
+    "setup": "node setup.mjs"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "dotenv": "^16.6.1",
+    "pino": "^9.6.0",
+    "proper-lockfile": "^4.1.2",
+    "qrcode": "^1.5.4"
+  }
+}
