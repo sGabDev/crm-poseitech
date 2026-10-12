@@ -13,6 +13,12 @@
 <label>Finalidade<select name="purpose">@foreach(\App\Services\MessageTemplates::PURPOSES as $key=>$label)<option value="{{ $key }}" @selected(old('purpose',$editing->purpose ?? 'general')===$key)>{{ $label }}</option>@endforeach</select></label></div>
 <label data-subject>Assunto do e-mail<input name="subject" maxlength="200" value="{{ old('subject',$editing->subject ?? '') }}" placeholder="Ex.: Lembrete de pagamento · {empresa}"></label>
 <label>Mensagem<textarea name="body" rows="7" maxlength="7000" required placeholder="Olá, {nome}! Aqui é da {empresa}.">{{ old('body',$editing->body ?? '') }}</textarea></label>
+<section data-receipt-html hidden>
+<h3>HTML do comprovante</h3><p class="muted">Este é o modelo completo do CRM. Edite textos, cores e estrutura usando estilos inline. Os blocos de itens, resumo e pagamentos são preenchidos automaticamente. A mensagem acima é usada em {mensagem_html} e na versão em texto.</p>
+<label>Código HTML<textarea name="html_body" rows="18" maxlength="60000" spellcheck="false" style="font-family:Consolas,monospace;font-size:12px;tab-size:2">{{ old('html_body',$editing->html_body ?? \App\Services\ReceiptHtml::defaults()) }}</textarea></label>
+<div class="actions" style="margin-top:12px"><button type="button" class="secondary" data-restore-receipt>Restaurar HTML padrão do CRM</button></div>
+<template data-default-receipt>{{ \App\Services\ReceiptHtml::defaults() }}</template>
+</section>
 <p class="muted">Clique para inserir uma variável:</p><div class="actions" data-variables></div>
 <label class="check"><input type="checkbox" name="is_default" value="1" @checked(old('is_default',$editing->is_default ?? false))>Usar como padrão desta finalidade e canal</label>
 <p class="muted">Comprovantes usam o padrão ao finalizar vendas. Cobranças usam o padrão ao enviar lembretes. Mensagens livres são enviadas manualmente. Sem um padrão, permanece o texto do sistema.</p>
@@ -20,7 +26,7 @@
 </form>
 @else<p class="muted">Você tem acesso de leitura aos modelos.</p>@endif
 </section>
-<section class="card"><h2>Prévia da mensagem</h2><p class="muted">Exemplo com dados ilustrativos. O envio usa os dados do cliente selecionado.</p><strong data-preview-subject></strong><p data-template-preview style="white-space:pre-wrap;margin-top:16px;overflow-wrap:anywhere"></p><hr style="border:0;border-top:1px solid var(--line)"><h2>Seus modelos</h2>
+<section class="card"><h2>Prévia da mensagem</h2><p class="muted">Exemplo com dados ilustrativos. O envio usa os dados do cliente selecionado.</p><strong data-preview-subject></strong><iframe data-html-preview title="Prévia do comprovante por e-mail" sandbox="" referrerpolicy="no-referrer" hidden style="width:100%;height:720px;border:1px solid var(--line);border-radius:8px;margin-top:16px;background:white"></iframe><p data-template-preview style="white-space:pre-wrap;margin-top:16px;overflow-wrap:anywhere"></p><hr style="border:0;border-top:1px solid var(--line)"><h2>Seus modelos</h2>
 @forelse($templates as $template)<div class="metric-row"><div><strong>{{ $template->name }}</strong><br><small>{{ $template->channel==='email' ? 'E-mail' : 'WhatsApp' }} · {{ \App\Services\MessageTemplates::PURPOSES[$template->purpose] }}{{ $template->is_default ? ' · Padrão' : '' }}</small></div><div class="actions">@if(auth()->user()->allows('message_templates',true))<a href="{{ url('/message-templates?edit='.$template->id) }}">Editar</a><form method="post" action="{{ url('/message-templates/'.$template->id.'/delete') }}" data-confirm="Excluir este modelo?">@csrf<button class="secondary">Excluir</button></form>@endif</div></div>@empty<p class="muted">Crie seu primeiro modelo ao lado.</p>@endforelse
 </section></div>
 @if(auth()->user()->allows('message_templates',true))

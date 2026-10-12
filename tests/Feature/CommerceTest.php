@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\CashFlow;
 use App\Services\Commerce;
 use App\Services\CompanySmtp;
+use App\Services\ReceiptHtml;
 use App\Services\Tenant;
 use App\Services\WhatsApp;
 use Carbon\Carbon;
@@ -131,7 +132,7 @@ class CommerceTest extends TestCase
         $this->assertStringContainsString('Cliente A:', $mail->body);
         $this->assertStringContainsString(Tenant::money($account->amount - $account->paid), $mail->body);
         $another = app(Tenant::class)->insert('customers', ['name' => 'Outro cliente', 'email' => 'other@example.test']);
-        $this->post('/message-templates/send', ['template_id' => DB::table('message_templates')->value('id'), 'customer_id' => $another, 'account_id' => $account->id, 'request_key' => (string) Str::uuid()])->assertStatus(422);
+        $this->post('/message-templates/send', ['template_id' => DB::table('message_templates')->value('id'), 'customer_id' => $another, 'account_id' => $account->id, 'request_key' => (string) Str::uuid()])->assertSessionHasErrors('account_id');
     }
 
     public function test_disabled_communication_modules_block_management_and_sending(): void
@@ -432,6 +433,78 @@ class CommerceTest extends TestCase
         $this->get('/cash-flow')->assertOk()->assertSee('Salvar todas as categorias');
     }
 
+    public function test_receipt_html_can_be_edited_and_sent_with_safe_dynamic_sale_blocks(): void
+    {
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'from' => 'crm@example.test']]);
+        $this->get('/message-templates')->assertOk()->assertSee('HTML do comprovante')->assertSee('data-html-preview', false);
+        $template = DB::table('message_templates')->where('channel', 'email')->where('purpose', 'receipt')->first();
+        $html = str_replace('COMPROVANTE DIGITAL', 'OBRIGADO PELA COMPRA', ReceiptHtml::defaults());
+        $html = str_replace('#11343d', '#112233', $html).'<script>alert(1)</script><p onclick="alert(2)">Segurança</p><a href="javascript:alert(3)">Link</a>';
+        $this->post('/message-templates/'.$template->id, ['name' => $template->name, 'channel' => 'email', 'purpose' => 'receipt', 'subject' => 'Compra {venda}', 'body' => 'Mensagem para {nome}', 'html_body' => $html, 'is_default' => 1])->assertSessionHasNoErrors();
+        $stored = DB::table('message_templates')->find($template->id);
+        $this->assertStringNotContainsString('<script', $stored->html_body);
+        $this->assertStringNotContainsString('onclick', $stored->html_body);
+        $this->assertStringNotContainsString('javascript:', $stored->html_body);
+        $this->assertStringContainsString('{itens_html}', $stored->html_body);
+        $id = app(Commerce::class)->sell($this->sale());
+        $email = DB::table('email_logs')->where('sale_id', $id)->first();
+        $this->assertStringContainsString('OBRIGADO PELA COMPRA', $email->html_body);
+        $this->assertStringContainsString('Produto A', $email->html_body);
+        $this->assertStringContainsString('#112233', $email->html_body);
+        $this->assertStringNotContainsString('{itens_html}', $email->html_body);
+        $this->assertStringNotContainsString('{comprovante}', $email->html_body);
+        $this->assertStringContainsString(url('/receipt/'.DB::table('sales')->find($id)->receipt_hash), $email->html_body);
+        $mailer = new Mailer('test', app('view'), new ArrayTransport, app('events'));
+        Mail::shouldReceive('build')->once()->andReturn($mailer);
+        $this->post('/settings/mail', ['action' => 'send', 'id' => $email->id])->assertSessionHasNoErrors();
+        $sent = $mailer->getSymfonyTransport()->messages()->first()->getOriginalMessage();
+        $this->assertStringContainsString('OBRIGADO PELA COMPRA', $sent->getHtmlBody());
+        $this->assertStringContainsString('Produto A', $sent->getTextBody());
+    }
+
+    public function test_receipt_button_always_redirects_even_with_json_accept_header(): void
+    {
+        $id = app(Commerce::class)->sell($this->sale());
+        $this->postJson('/sales/'.$id.'/email')->assertRedirect('/sales/'.$id)->assertSessionHasErrors('receipt');
+    }
+
+    public function test_receipt_email_preconditions_redirect_back_with_clear_errors(): void
+    {
+        $id = app(Commerce::class)->sell($this->sale());
+        $this->from('/sales/'.$id)->post('/sales/'.$id.'/email')->assertRedirect('/sales/'.$id)->assertSessionHasErrors('receipt');
+        $this->assertStringContainsString('SMTP', session('errors')->first('receipt'));
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'from' => 'crm@example.test']]);
+        app(Tenant::class)->update('customers', $this->customer, ['email' => null]);
+        $this->from('/sales/'.$id)->post('/sales/'.$id.'/email')->assertRedirect('/sales/'.$id)->assertSessionHasErrors('receipt');
+        $this->assertStringContainsString('e-mail válido', session('errors')->first('receipt'));
+        app(Tenant::class)->update('sales', $id, ['customer_id' => null]);
+        $this->from('/sales/'.$id)->post('/sales/'.$id.'/email')->assertRedirect('/sales/'.$id)->assertSessionHasErrors('receipt');
+        $this->assertStringContainsString('cliente vinculado', session('errors')->first('receipt'));
+    }
+
+    public function test_template_receipt_email_reuses_sale_queue_and_keeps_detailed_layout(): void
+    {
+        $id = app(Commerce::class)->sell($this->sale());
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'from' => 'crm@example.test']]);
+        $template = app(Tenant::class)->insert('message_templates', ['name' => 'Comprovante próprio', 'channel' => 'email', 'purpose' => 'receipt', 'subject' => 'Sua compra {venda}', 'body' => 'Agradecemos sua preferência, {nome}.']);
+        $data = ['template_id' => $template, 'customer_id' => $this->customer, 'sale_id' => $id, 'request_key' => (string) Str::uuid()];
+        $this->from('/message-templates')->post('/message-templates/send', $data)->assertSessionHasNoErrors()->assertRedirect('/message-templates');
+        $this->assertDatabaseCount('email_logs', 1);
+        $email = DB::table('email_logs')->where('sale_id', $id)->first();
+        $this->assertSame('Sua compra '.$id, $email->subject);
+        $mailer = new Mailer('test', app('view'), new ArrayTransport, app('events'));
+        Mail::shouldReceive('build')->once()->andReturn($mailer);
+        $this->post('/settings/mail', ['action' => 'send', 'id' => $email->id])->assertSessionHasNoErrors();
+        $message = $mailer->getSymfonyTransport()->messages()->first()->getOriginalMessage();
+        $this->assertStringContainsString('COMPROVANTE DIGITAL', $message->getHtmlBody());
+        $this->assertStringContainsString('Produto A', $message->getHtmlBody());
+        $this->assertStringContainsString('Abrir comprovante completo', $message->getHtmlBody());
+        $this->assertStringContainsString('Agradecemos sua preferência, Cliente A.', $message->getHtmlBody());
+        $this->assertStringContainsString('Produto A', $message->getTextBody());
+        $this->post('/message-templates/send', array_replace($data, ['request_key' => (string) Str::uuid()]))->assertSessionHas('success', 'Este comprovante já foi enviado por e-mail.');
+        $this->assertDatabaseCount('email_logs', 1);
+    }
+
     public function test_sale_automatically_queues_one_receipt_and_renders_html_and_text(): void
     {
         $d = $this->sale();
@@ -451,6 +524,8 @@ class CommerceTest extends TestCase
         $this->assertStringContainsString('Produto A', $message->getHtmlBody());
         $this->assertStringContainsString('Abrir comprovante completo', $message->getHtmlBody());
         $this->assertStringContainsString('Valor em fiado desta compra', $message->getHtmlBody());
+        $this->assertStringContainsString('Reunimos os detalhes para você consultar sempre que precisar.', $message->getHtmlBody());
+        $this->assertStringNotContainsString('Sua compra #'.$sale->id.' foi registrada. Total:', $message->getHtmlBody());
         $this->assertStringContainsString($sale->receipt_hash, $message->getTextBody());
         $this->post('/sales/'.$sale->id.'/email')->assertSessionHasNoErrors();
         $this->assertSame(1, DB::table('email_logs')->where('sale_id', $sale->id)->count());

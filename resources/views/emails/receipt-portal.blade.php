@@ -1,0 +1,1 @@
+@if($company->enabled('portal') && ($portalUrl=\App\Services\PortalLink::url($customer)))<p><a href="{{ $portalUrl }}" style="font-size:14px;color:#087e8b;text-decoration:underline">Acompanhar minhas compras no portal</a></p>@endif

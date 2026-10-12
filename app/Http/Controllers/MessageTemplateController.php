@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Services\MessageTemplates;
+use App\Services\ReceiptHtml;
 use App\Services\Tenant;
 use App\Services\WhatsApp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class MessageTemplateController extends Controller
 {
@@ -41,6 +43,16 @@ class MessageTemplateController extends Controller
     {
         $this->t->authorize('message_templates', true);
         $data = $request->validate(['name' => 'required|string|max:120', 'channel' => 'required|in:email,whatsapp', 'purpose' => 'required|in:receipt,billing,general', 'subject' => 'nullable|required_if:channel,email|string|max:200|not_regex:/[\r\n]/', 'body' => 'required|string|max:7000', 'is_default' => 'nullable|boolean']);
+        $htmlData = $request->validate(['html_body' => 'nullable|string|max:60000']);
+        $data['html_body'] = null;
+        if ($data['channel'] === 'email' && $data['purpose'] === 'receipt') {
+            $html = $htmlData['html_body'] ?? ReceiptHtml::defaults();
+            preg_match_all('/\{([a-z_]+)\}/', $html, $variables);
+            if (array_diff($variables[1], ReceiptHtml::VARIABLES)) {
+                throw ValidationException::withMessages(['html_body' => 'O HTML contém variáveis desconhecidas. Use as variáveis indicadas no editor.']);
+            }
+            $data['html_body'] = ReceiptHtml::sanitize($html);
+        }
         $this->templates->validate($data['purpose'], $data['body'].' '.($data['subject'] ?? ''));
         $data['is_default'] = $request->boolean('is_default') && $data['purpose'] !== 'general';
         DB::transaction(function () use ($data, $id) {
@@ -78,26 +90,42 @@ class MessageTemplateController extends Controller
         $data = $request->validate(['template_id' => 'required|integer', 'customer_id' => 'required|integer', 'sale_id' => 'nullable|integer', 'account_id' => 'nullable|integer', 'request_key' => 'required|uuid']);
         $template = $this->t->find('message_templates', $data['template_id']);
         $customer = $this->t->find('customers', $data['customer_id']);
-        abort_if($customer->anonymized_at, 422, 'Cliente indisponível.');
+        if ($customer->anonymized_at) {
+            throw ValidationException::withMessages(['customer_id' => 'Cliente indisponível.']);
+        }
         $sale = $account = null;
         if ($template->purpose === 'receipt') {
+            $request->validate(['sale_id' => 'required|integer|min:1']);
             $this->t->authorize('sales', true);
             $sale = $this->t->find('sales', (int) ($data['sale_id'] ?? 0));
-            abort_unless($sale->customer_id === $customer->id && $sale->status !== 'cancelled', 422, 'Escolha uma venda ativa deste cliente.');
+            if ((int) $sale->customer_id !== (int) $customer->id || $sale->status === 'cancelled') {
+                throw ValidationException::withMessages(['sale_id' => 'Escolha uma venda ativa deste cliente.']);
+            }
         }
         if ($template->purpose === 'billing') {
+            $request->validate(['account_id' => 'required|integer|min:1']);
             $account = $this->t->find('accounts', (int) ($data['account_id'] ?? 0));
             $this->t->authorize($account->origin === 'credit' ? 'credit' : 'finance', true);
-            abort_unless($account->customer_id === $customer->id && $account->type === 'receivable' && $account->status === 'pending', 422, 'Escolha uma conta pendente deste cliente.');
+            if ((int) $account->customer_id !== (int) $customer->id || $account->type !== 'receivable' || $account->status !== 'pending') {
+                throw ValidationException::withMessages(['account_id' => 'Escolha uma conta pendente deste cliente.']);
+            }
         }
         $message = $this->templates->render($template, $this->templates->values($customer, $sale, $account));
         if ($template->channel === 'email') {
-            abort_unless($customer->email && $this->t->company->smtp, 422, 'Cadastre o e-mail do cliente e configure o SMTP.');
-            abort_if($template->purpose === 'general' && ! $customer->email_consent, 422, 'O cliente não autorizou mensagens por e-mail.');
+            if (! filter_var($customer->email, FILTER_VALIDATE_EMAIL) || ! $this->t->company->smtp) {
+                throw ValidationException::withMessages(['send' => 'Cadastre um e-mail válido para o cliente e configure o SMTP em Configurações.']);
+            }
+            if ($template->purpose === 'general' && ! $customer->email_consent) {
+                throw ValidationException::withMessages(['send' => 'O cliente não autorizou mensagens por e-mail.']);
+            }
         } else {
             $this->t->authorize('whatsapp', true);
-            abort_unless(WhatsApp::phone($customer->phone), 422, 'Cadastre um telefone válido.');
-            abort_if($template->purpose === 'general' && ! $customer->whatsapp_consent, 422, 'O cliente não autorizou mensagens por WhatsApp.');
+            if (! WhatsApp::phone($customer->phone)) {
+                throw ValidationException::withMessages(['send' => 'Cadastre um telefone válido para o cliente.']);
+            }
+            if ($template->purpose === 'general' && ! $customer->whatsapp_consent) {
+                throw ValidationException::withMessages(['send' => 'O cliente não autorizou mensagens por WhatsApp.']);
+            }
         }
         // Durable idempotency record: an ambiguous WhatsApp send is never retried automatically.
         $delivery = DB::transaction(function () use ($data, $template, $customer) {
@@ -113,9 +141,21 @@ class MessageTemplateController extends Controller
             return back()->with('success', 'Esta solicitação já foi registrada. Consulte o histórico antes de reenviar.');
         }
         if ($template->channel === 'email') {
-            DB::transaction(function () use ($customer, $message, $delivery) {
-                $emailId = $this->t->insert('email_logs', ['customer_id' => $customer->id, 'recipient' => $customer->email] + $message);
-                $this->t->update('template_deliveries', $delivery, ['status' => 'queued', 'email_log_id' => $emailId]);
+            $emailStatus = DB::transaction(function () use ($customer, $message, $delivery, $sale) {
+                $this->t->lock();
+                $existing = $sale ? $this->t->query('email_logs')->where('sale_id', $sale->id)->first() : null;
+                if ($existing) {
+                    $emailId = $existing->id;
+                    if (in_array($existing->status, ['pending', 'failed', 'cancelled'])) {
+                        $this->t->update('email_logs', $emailId, $message + ['recipient' => $customer->email, 'status' => 'pending', 'error' => null]);
+                    }
+                } else {
+                    $emailId = $this->t->insert('email_logs', ['sale_id' => $sale?->id, 'customer_id' => $customer->id, 'recipient' => $customer->email] + $message);
+                }
+                $status = $existing && in_array($existing->status, ['sent', 'sending']) ? $existing->status : 'queued';
+                $this->t->update('template_deliveries', $delivery, ['status' => $status, 'email_log_id' => $emailId]);
+
+                return $status;
             });
         } else {
             try {
@@ -139,6 +179,13 @@ class MessageTemplateController extends Controller
         }
         $this->t->audit('template.sent', 'message_templates', $template->id);
 
-        return back()->with('success', $template->channel === 'email' ? 'E-mail colocado na fila de envio.' : 'Mensagem enviada pelo WhatsApp.');
+        $feedback = match ($emailStatus ?? null) {
+            'sent' => 'Este comprovante já foi enviado por e-mail.',
+            'sending' => 'Este comprovante está sendo enviado por e-mail.',
+            'queued' => 'E-mail colocado na fila de envio.',
+            default => 'Mensagem enviada pelo WhatsApp.',
+        };
+
+        return back()->with('success', $feedback);
     }
 }

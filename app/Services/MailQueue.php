@@ -42,8 +42,18 @@ class MailQueue
             $data = ['body' => $email->body, 'companyName' => $company->name];
             if ($email->sale_id) {
                 $sale = DB::table('sales')->where('company_id', $company->id)->where('id', $email->sale_id)->firstOrFail();
-                $data = ['body' => $email->body, 'sale' => $sale, 'company' => $company, 'customer' => $customer, 'items' => DB::table('sale_items')->where('company_id', $company->id)->where('sale_id', $sale->id)->get(), 'payments' => DB::table('payments')->where('company_id', $company->id)->where('sale_id', $sale->id)->get()];
+                $total = ($company->currency === 'BRL' ? 'R$' : (['USD' => 'US$', 'EUR' => '€', 'GBP' => '£'][$company->currency] ?? $company->currency)).' '.number_format($sale->total / 100, 2, ',', '.');
+                $originalMessages = [
+                    'Olá, '.$customer->name.'. Sua compra #'.$sale->id.' foi registrada. Total: '.$total.'.',
+                    'Olá, '.$customer->name.'. Seu comprovante de '.$total.' está disponível em '.url('/receipt/'.$sale->receipt_hash),
+                ];
+                $body = in_array($email->body, $originalMessages, true) ? null : $email->body;
+                $data = ['body' => $body, 'sale' => $sale, 'company' => $company, 'customer' => $customer, 'items' => DB::table('sale_items')->where('company_id', $company->id)->where('sale_id', $sale->id)->get(), 'payments' => DB::table('payments')->where('company_id', $company->id)->where('sale_id', $sale->id)->get()];
                 $view = ['html' => 'emails.receipt', 'text' => 'emails.receipt-text'];
+                if (! empty($email->html_body)) {
+                    $data['htmlBody'] = ReceiptHtml::sanitize($email->html_body);
+                    $view['html'] = 'emails.receipt-custom';
+                }
             }
             $mailer->send($view, $data, function ($m) use ($email, $smtp) {
                 $m->to($email->recipient)->from($smtp['from'], $smtp['from_name'] ?? '')->subject($email->subject);

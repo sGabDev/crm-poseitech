@@ -9,6 +9,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class CampaignController extends Controller
 {
@@ -63,25 +64,40 @@ class CampaignController extends Controller
     {
         $this->t->authorize('sales', true);
         $sale = $this->t->find('sales', $id);
-        abort_unless($sale->customer_id, 422, 'Venda sem cliente.');
+        if (! $sale->customer_id) {
+            return redirect('/sales/'.$id)->withErrors(['receipt' => 'Esta venda não tem cliente vinculado. O comprovante continua disponível em “Ver comprovante”.']);
+        }
         $customer = $this->t->find('customers', $sale->customer_id);
-        abort_unless($customer->email && ! $customer->anonymized_at, 422, 'Cliente sem e-mail.');
-        abort_unless($this->t->company->smtp, 422, 'Configure o SMTP.');
-        $status = DB::transaction(function () use ($id, $customer, $sale) {
+        if (! filter_var($customer->email, FILTER_VALIDATE_EMAIL) || $customer->anonymized_at) {
+            return redirect('/sales/'.$id)->withErrors(['receipt' => 'Cadastre um e-mail válido para o cliente antes de enviar o comprovante.']);
+        }
+        if (! $this->t->company->smtp) {
+            return redirect('/sales/'.$id)->withErrors(['receipt' => 'Configure o envio de e-mail (SMTP) em Configurações antes de enviar o comprovante.']);
+        }
+        $templates = app(MessageTemplates::class);
+        try {
+            $content = $templates->automatic('email', 'receipt', $templates->values($customer, $sale), ['subject' => 'Comprovante de compra #'.$id,
+                'body' => 'Olá, '.$customer->name.'. Seu comprovante de '.Tenant::money($sale->total).' está disponível em '.url('/receipt/'.$sale->receipt_hash)]);
+        } catch (ValidationException $error) {
+            return redirect('/sales/'.$id)->withErrors($error->errors());
+        }
+        $content += ['html_body' => null];
+        $status = DB::transaction(function () use ($id, $customer, $content) {
             $this->t->lock();
             $existing = $this->t->query('email_logs')->where('sale_id', $id)->first();
             if ($existing) {
                 if (in_array($existing->status, ['failed', 'cancelled'])) {
-                    $this->t->query('email_logs')->where('id', $existing->id)->whereIn('status', ['failed', 'cancelled'])->update(['status' => 'pending', 'error' => null, 'updated_at' => now()]);
+                    $this->t->query('email_logs')->where('id', $existing->id)->whereIn('status', ['failed', 'cancelled'])->update($content + ['status' => 'pending', 'recipient' => $customer->email, 'error' => null, 'updated_at' => now()]);
 
                     return 'pending';
                 }
 
+                if ($existing->status === 'pending') {
+                    $this->t->update('email_logs', $existing->id, $content + ['recipient' => $customer->email]);
+                }
+
                 return $existing->status;
             }
-            $templates = app(MessageTemplates::class);
-            $content = $templates->automatic('email', 'receipt', $templates->values($customer, $sale), ['subject' => 'Comprovante de compra #'.$id,
-                'body' => 'Olá, '.$customer->name.'. Seu comprovante de '.Tenant::money($sale->total).' está disponível em '.url('/receipt/'.$sale->receipt_hash)]);
             $this->t->insert('email_logs', ['sale_id' => $id, 'customer_id' => $customer->id, 'recipient' => $customer->email] + $content);
 
             return 'pending';

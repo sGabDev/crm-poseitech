@@ -1,0 +1,3 @@
+<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px"><thead><tr><th align="left" style="padding:10px 0;border-bottom:1px solid #dbe7ea">Item</th><th align="right" style="padding:10px 0;border-bottom:1px solid #dbe7ea">Valor</th></tr></thead><tbody>
+@foreach($items as $item)<tr><td style="padding:14px 8px 14px 0;border-bottom:1px solid #edf1f3">{{ $item->quantity }} × {{ $item->name }}@if($item->addons)<br><small style="color:#637980">{{ $item->addons }}</small>@endif</td><td align="right" style="padding:14px 0;border-bottom:1px solid #edf1f3;white-space:nowrap">{{ \App\Services\Tenant::money($item->total) }}</td></tr>@endforeach
+</tbody></table>

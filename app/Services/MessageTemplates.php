@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Company;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class MessageTemplates
@@ -35,6 +36,9 @@ class MessageTemplates
                 ['name' => 'Lembrete de cobrança · WhatsApp', 'channel' => 'whatsapp', 'purpose' => 'billing', 'subject' => null, 'body' => $billing],
             ];
             foreach ($defaults as $data) {
+                if ($data['channel'] === 'email' && $data['purpose'] === 'receipt' && Schema::hasColumn('message_templates', 'html_body')) {
+                    $data['html_body'] = ReceiptHtml::defaults();
+                }
                 $hasDefault = $this->t->query('message_templates')->where('channel', $data['channel'])->where('purpose', $data['purpose'])->where('is_default', true)->exists();
                 $this->t->insert('message_templates', $data + ['is_default' => ! $hasDefault]);
             }
@@ -77,7 +81,12 @@ class MessageTemplates
             }
         }
 
-        return ['body' => strtr($template->body, $map), 'subject' => strtr($template->subject ?? '', $map)];
+        $content = ['body' => strtr($template->body, $map), 'subject' => strtr($template->subject ?? '', $map)];
+        if (! empty($template->html_body) && $template->channel === 'email' && $template->purpose === 'receipt') {
+            $content['html_body'] = ReceiptHtml::render($template->html_body, $values, $this->t, $content['body']);
+        }
+
+        return $content;
     }
 
     public function automatic(string $channel, string $purpose, array $values, array $fallback): array
