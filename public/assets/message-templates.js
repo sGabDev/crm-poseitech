@@ -38,7 +38,7 @@ if(editor){
   document.querySelector('[data-body-counter]').textContent=body.value.length.toLocaleString('pt-BR')+' / 7.000';
   const frame=document.querySelector('[data-html-preview]');frame.hidden=!receipt;paragraph.closest('.template-text-preview').hidden=receipt;
   if(receipt){
-   const blocks={itens_html:'<table width="100%" style="font-size:14px"><tr><th align="left">Item</th><th align="right">Valor</th></tr><tr><td style="padding:14px 0">1 × Consultoria</td><td align="right">R$ 199,00</td></tr></table>',resumo_html:'<p style="font-size:13px">Subtotal: R$ 199,00<br>Desconto: R$ 10,00</p>',pagamentos_html:'<p style="font-size:14px">Pix: <strong>R$ 189,00</strong></p>',portal_html:'<p style="font-size:13px;color:#087e8b">Acompanhar minhas compras no portal</p>',mensagem_html:escape(render(body.value)).replace(/\n/g,'<br>')};
+   const blocks={itens_html:'<table width="100%" style="font-size:14px"><tr><th align="left">Item</th><th align="right">Valor</th></tr><tr><td style="padding:14px 0">1 × Consultoria</td><td align="right">R$ 199,00</td></tr></table>',resumo_html:'<p style="font-size:13px">Subtotal: R$ 199,00<br>Desconto: R$ 10,00</p>',pagamentos_html:'<p style="font-size:14px">Pix: <strong>R$ 189,00</strong></p>',portal_html:'<p style="font-size:13px;color:#087e8b">Acompanhar minhas compras no portal</p>',mensagem_html:''};
    const standard='Olá, {nome}. Sua compra #{venda} foi registrada. Total: {total}.';if(body.value===standard)blocks.mensagem_html='';
    const content=html.value.replace(/\{([a-z_]+)\}/g,(match,key)=>blocks[key]??(sample[key]!==undefined?escape(sample[key]):match));
    frame.srcdoc='<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;; base-uri &#39;none&#39;; form-action &#39;none&#39;">'+content;
@@ -50,18 +50,16 @@ if(editor){
   [...variables[editor.elements.purpose.value],...(isReceipt()&&target===html?htmlVariables:[])].forEach(key=>{const button=document.createElement('button');button.type='button';button.textContent='+ '+labels[key];button.title='{'+key+'}';button.addEventListener('click',()=>insert('{'+key+'}'));box.append(button);});
  };
  [body,subject,html,...texts].forEach(input=>input.addEventListener('focus',()=>{target=input;renderVariables();}));
- editor.querySelector('[data-receipt-advanced]').addEventListener('toggle',event=>{if(!event.currentTarget.open&&target===html){target=body;renderVariables();}});
  const update=()=>{
   const email=editor.elements.channel.value==='email',receipt=isReceipt();editor.querySelector('[data-subject]').hidden=!email;subject.required=email;
-  editor.querySelector('[data-receipt-html]').hidden=!receipt;editor.querySelector('[data-receipt-advanced]').hidden=!receipt;html.disabled=!receipt;
+  editor.querySelector('[data-receipt-html]').hidden=!receipt;html.disabled=!receipt;
   const general=editor.elements.purpose.value==='general';editor.elements.is_default.disabled=general;if(general)editor.elements.is_default.checked=false;
   editor.querySelector('[data-format-tools]').hidden=email;
-  editor.querySelector('[data-body-heading]').textContent=receipt?'Mensagem adicional':'Mensagem';
+  editor.querySelector('[data-message-fields]').hidden=receipt;if(receipt&&!body.value)body.value='Olá, {nome}. Sua compra #{venda} foi registrada. Total: {total}.';
   editor.querySelector('[data-body-help]').textContent=receipt?'Aparece no comprovante e na versão em texto do e-mail.':'Escreva como você fala com seus clientes.';
-  target=body;syncDesigner();renderVariables();preview();
+  target=receipt?texts[1]:body;syncDesigner();renderVariables();preview();
  };
  editor.querySelectorAll('[data-wrap]').forEach(button=>button.addEventListener('click',()=>{target=body;const start=body.selectionStart,end=body.selectionEnd,selected=body.value.slice(start,end)||'texto';insert(button.dataset.wrap+selected+button.dataset.wrap);body.setSelectionRange(start+button.dataset.wrap.length,start+button.dataset.wrap.length+selected.length);}));
- editor.querySelector('[data-restore-receipt]').addEventListener('click',()=>{if(confirm('Restaurar a aparência padrão do CRM? A mudança só será aplicada ao salvar.')){html.value=editor.querySelector('[data-default-receipt]').content.textContent;markDirty();syncDesigner();preview();}});
  editor.addEventListener('input',event=>{
   if(event.target.dataset.designText){html.value=window.ReceiptDesigner.apply(html.value,event.target.dataset.designText,event.target.value,'text');}
   if(event.target.dataset.designColor){html.value=window.ReceiptDesigner.apply(html.value,event.target.dataset.designColor,event.target.value,'color');}

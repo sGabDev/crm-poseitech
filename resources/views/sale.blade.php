@@ -14,7 +14,7 @@
 @if(session('sale_completed') == $sale->id)
 <section class="sale-completed" role="status">
 <span class="completion-icon" aria-hidden="true">✓</span>
-<div><h2>Venda concluída</h2><p>O registro foi salvo. Confira o comprovante ou inicie o próximo atendimento.</p></div>
+<div><h2>{{ $sale->status==='pending_payment' ? 'Venda registrada' : 'Venda concluída' }}</h2><p>O registro foi salvo. Confira o pagamento ou inicie o próximo atendimento.</p></div>
 @if(auth()->user()->allows('sales', true))<a class="button" href="{{ url('/sales/new') }}">Fazer nova venda →</a>@endif
 </section>
 @endif
@@ -29,9 +29,14 @@
 </div>
 <div class="kpi">
 <span>Status</span>
-<strong>{{ $sale->status==='cancelled' ? 'Cancelada' : ($sale->fiado_amount>0 ? 'Fiado' : 'Pago') }}</strong>
+<strong>{{ $sale->status==='cancelled' ? 'Cancelada' : ($sale->paid < $sale->total ? 'Aguardando pagamento' : 'Pago') }}</strong>
 </div>
 </div>
+@if(in_array('mercadopago',json_decode($sale->payment_methods ?? '[]',true)) && $sale->status!=='cancelled')
+<section class="card"><h2>Mercado Pago</h2><p class="muted">A confirmação do pagamento atualiza esta venda e a conta do cliente automaticamente.</p>
+@foreach($accounts as $account)@if($account->status==='pending')<form method="post" action="{{ url('/accounts/'.$account->id.'/mercadopago') }}">@csrf<button>Gerar / abrir link de pagamento</button></form>@endif @endforeach
+@foreach($mercadoPagoLinks ?? [] as $link)<p><a href="{{ url('/payments/mercadopago/'.$link->id) }}">Ver pagamento e envios #{{ $link->id }}</a> · {{ ['approved'=>'Confirmado','pending'=>'Aguardando pagamento','unknown'=>'Criação sem confirmação','review'=>'Conferir pagamento','test_approved'=>'Aprovado em teste'][$link->status] ?? $link->status }}</p>@endforeach
+</section>@endif
 <section class="card">@include('components.items')<p>Desconto: {{ \App\Services\Tenant::money($sale->discount) }} · Acréscimos: {{ \App\Services\Tenant::money($sale->extra) }}</p>
 <p>{{ $sale->notes }}</p>
 <div class="actions">

@@ -56,12 +56,12 @@
                 <section class="card">
                     <div class="sale-section-heading"><span>03</span><div><h2>Pagamento</h2><p>Confira o valor recebido e a forma de pagamento.</p></div></div>
                     <label class="check"><input type="checkbox" name="use_balance" id="use-balance" value="1" @checked(old('use_balance',true))>Usar saldo disponível na conta do cliente</label>
-                    <p class="muted">Edite o valor recebido se necessário. A diferença não paga fica em fiado.</p>
+                    <p class="muted">Edite o valor recebido se necessário. A diferença não paga fica em fiado. No Mercado Pago, selecione um cliente e somente essa forma; a venda aguarda a confirmação do pagamento.</p>
                     <input type="hidden" name="auto_payment" id="auto-payment" value="{{ old('auto_payment',1) }}">
                     <div id="sale-payments">@foreach(old('payments', [['method' => 'pix', 'amount' => 0]]) as $index => $payment)
                         <div class="payment-line">
                             <label>Forma<select
-                                    name="payments[{{ $index }}][method]">@foreach(config('poseitech.sale_methods') as $k => $v)
+                                    name="payments[{{ $index }}][method]">@foreach(config('poseitech.sale_methods') as $k => $v)@continue($k==='mercadopago' && !($company->mercadopago['enabled'] ?? false))
                                     <option value="{{ $k }}" @selected($payment['method'] === $k)>{{ $v }}</option>@endforeach
                                 </select>
                             </label>

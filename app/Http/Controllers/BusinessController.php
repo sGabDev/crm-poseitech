@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\Analytics;
 use App\Services\Commerce;
+use App\Services\MercadoPago;
 use App\Services\ReportExport;
 use App\Services\Tenant;
 use Carbon\Carbon;
@@ -71,6 +72,32 @@ class BusinessController extends Controller
 
         $saleId = $this->commerce->sell($d);
 
+        if (collect($d['payments'])->contains('method', 'mercadopago')) {
+            $account = $this->t->query('accounts')->where('sale_id', $saleId)->where('status', 'pending')->first();
+            if ($account) {
+                try {
+                    $mp = app(MercadoPago::class);
+                    $checkout = $mp->create($account->id);
+                    $issues = [];
+                    foreach (['email', 'whatsapp'] as $channel) {
+                        try {
+                            if ($channel === 'whatsapp') {
+                                $mp->queueWhatsApp($checkout);
+                            } else {
+                                $mp->deliver($checkout, $channel);
+                            }
+                        } catch (\Throwable $e) {
+                            $issues[] = $channel === 'email' ? 'e-mail' : 'WhatsApp';
+                        }
+                    }
+
+                    return redirect('/sales/'.$saleId)->with('success', $issues ? 'Venda aguardando pagamento. Confira o envio por '.implode(' e ', $issues).' no painel do link.' : 'Venda aguardando pagamento. Envios por e-mail e WhatsApp solicitados.')->with('sale_completed', $saleId);
+                } catch (\Throwable $e) {
+                    return redirect('/sales/'.$saleId)->withErrors(['mercadopago' => 'Venda registrada e preservada, aguardando pagamento. Não foi possível gerar o link; use o botão Mercado Pago abaixo para consultar ou tentar novamente.']);
+                }
+            }
+        }
+
         return redirect('/sales/'.$saleId)->with('success', 'Venda registrada.')->with('sale_completed', $saleId);
     }
 
@@ -79,7 +106,7 @@ class BusinessController extends Controller
         $this->t->authorize('sales');
         $sale = $this->t->find('sales', $id);
 
-        return view('sale', ['sale' => $sale, 'whatsappMessage' => $this->t->query('whatsapp_messages')->where('sale_id', $id)->first(), 'items' => $this->t->query('sale_items')->where('sale_id', $id)->get(),
+        return view('sale', ['sale' => $sale, 'mercadoPagoLinks' => $this->t->query('mp_checkouts')->where('sale_id', $id)->latest('id')->get(), 'whatsappMessage' => $this->t->query('whatsapp_messages')->where('sale_id', $id)->first(), 'items' => $this->t->query('sale_items')->where('sale_id', $id)->get(),
             'payments' => $this->t->query('payments')->where('sale_id', $id)->get(), 'accounts' => $this->t->query('accounts')->where('sale_id', $id)->get(),
             'customer' => $sale->customer_id ? $this->t->find('customers', $sale->customer_id) : null]);
     }

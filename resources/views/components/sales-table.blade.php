@@ -17,7 +17,7 @@
 <td>{{ \App\Services\Tenant::money($sale->total) }}</td>
 <td>{{ \App\Services\Commerce::paymentLabel($sale) }}</td>
 <td>
-<span class="badge {{ $sale->status==='cancelled' ? 'danger' : '' }}">{{ $sale->status==='cancelled' ? 'Cancelada' : ($sale->fiado_amount>0 ? 'Fiado' : 'Pago') }}</span>
+<span class="badge {{ $sale->status==='cancelled' ? 'danger' : '' }}">{{ $sale->status==='cancelled' ? 'Cancelada' : ($sale->paid < $sale->total ? ($sale->status==='pending_payment' ? 'Aguardando pagamento' : 'Fiado') : 'Pago') }}</span>
 </td>
 </tr>@empty<tr>
 <td class="empty" colspan="5">Nenhuma venda encontrada no período.</td>

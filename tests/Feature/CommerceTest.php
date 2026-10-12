@@ -436,7 +436,7 @@ class CommerceTest extends TestCase
     public function test_receipt_html_can_be_edited_and_sent_with_safe_dynamic_sale_blocks(): void
     {
         $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'from' => 'crm@example.test']]);
-        $this->get('/message-templates')->assertOk()->assertSee('HTML do comprovante')->assertSee('data-html-preview', false);
+        $this->get('/message-templates')->assertOk()->assertDontSee('HTML do comprovante')->assertDontSee('data-receipt-advanced', false)->assertSee('data-html-preview', false);
         $template = DB::table('message_templates')->where('channel', 'email')->where('purpose', 'receipt')->first();
         $html = str_replace('COMPROVANTE DIGITAL', 'OBRIGADO PELA COMPRA', ReceiptHtml::defaults());
         $html = str_replace('#11343d', '#112233', $html).'<script>alert(1)</script><p onclick="alert(2)">Segurança</p><a href="javascript:alert(3)">Link</a>';

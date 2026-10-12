@@ -36,14 +36,14 @@
 <label>Saudação<input data-design-text="greeting" maxlength="200" placeholder="Olá, {nome}!"></label>
 <label>Texto de apresentação<textarea data-design-text="intro" rows="3" maxlength="2000"></textarea></label>
 <label>Texto do botão<input data-design-text="button" maxlength="160" placeholder="Abrir comprovante completo →"></label>
-<p class="template-help" data-design-warning hidden>Seu HTML tem uma estrutura personalizada. Os campos disponíveis podem ser editados aqui; o restante está em “Opções avançadas”.</p>
+<p class="template-help" data-design-warning hidden>Este modelo usa uma estrutura personalizada. Edite os campos disponíveis abaixo.</p>
 </section>
-<div class="template-section-title"><h3 data-body-heading>Mensagem</h3><span data-body-counter></span></div>
+<div data-message-fields><div class="template-section-title"><h3 data-body-heading>Mensagem</h3><span data-body-counter></span></div>
 <div class="template-message-box"><div class="template-format-tools" data-format-tools hidden><button type="button" data-wrap="*" aria-label="Negrito"><strong>B</strong></button><button type="button" data-wrap="_" aria-label="Itálico"><i>I</i></button><button type="button" data-wrap="~" aria-label="Tachado"><s>S</s></button><button type="button" data-wrap="`" aria-label="Código">&lt;/&gt;</button></div><textarea name="body" rows="5" maxlength="7000" required placeholder="Olá, {nome}! Aqui é da {empresa}.">{{ old('body',$editing->body ?? '') }}</textarea></div>
 <p class="template-help" data-body-help>Escreva como você fala com seus clientes.</p>
-<div class="template-variable-heading"><span>Adicionar informação do cliente</span><small>Inserir no campo selecionado</small></div><div class="template-variable-list" data-variables></div>
+</div><div class="template-variable-heading"><span>Adicionar informação do cliente</span><small>Inserir no campo selecionado</small></div><div class="template-variable-list" data-variables></div>
 <label class="template-default check"><input type="checkbox" name="is_default" value="1" @checked(old('is_default',$editing->is_default ?? false))><span>Usar como modelo padrão<small>Aplicar nos próximos envios desta finalidade e canal.</small></span></label>
-<details class="template-advanced" data-receipt-advanced hidden><summary>Opções avançadas · HTML do comprovante</summary><p class="template-help">Edite o código completo usando estilos inline. A prévia usa dados ilustrativos.</p><label>Código HTML<textarea name="html_body" rows="16" maxlength="60000" spellcheck="false">{{ old('html_body',$editing->html_body ?? \App\Services\ReceiptHtml::defaults()) }}</textarea></label><button type="button" class="secondary" data-restore-receipt>Restaurar padrão do CRM</button><template data-default-receipt>{{ \App\Services\ReceiptHtml::defaults() }}</template></details>
+<textarea name="html_body" hidden>{{ old('html_body',$editing->html_body ?? \App\Services\ReceiptHtml::defaults()) }}</textarea>
 </div>
 <div class="template-editor-footer"><span>Confira a prévia antes de salvar.</span><button>{{ $editing ? 'Salvar alterações' : 'Criar modelo' }}</button></div>
 </form>

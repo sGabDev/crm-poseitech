@@ -8,11 +8,11 @@ class Company extends Model
 {
     protected $guarded = ['id'];
 
-    protected $hidden = ['smtp'];
+    protected $hidden = ['smtp', 'mercadopago'];
 
     protected function casts(): array
     {
-        return ['modules' => 'array', 'settings' => 'array', 'smtp' => 'encrypted:array', 'subscription_until' => 'date'];
+        return ['modules' => 'array', 'settings' => 'array', 'smtp' => 'encrypted:array', 'mercadopago' => 'encrypted:array', 'subscription_until' => 'date'];
     }
 
     public function plan()

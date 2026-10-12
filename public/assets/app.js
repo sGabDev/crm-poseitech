@@ -53,9 +53,9 @@ if(saleForm){
   const used=document.querySelector('#use-balance').checked?Math.min(Math.max(0,total),balance):0;
   const rows=[...saleForm.querySelectorAll('.payment-line')];const automatic=rows.length===1&&!manualPayment;
   document.querySelector('#auto-payment').value=automatic?'1':'0';let paid=used;
-  rows.forEach(row=>{const input=row.querySelector('.payment-amount');const fiado=row.querySelector('select').value==='fiado';input.readOnly=fiado;if(automatic&&!fiado)input.value=(Math.max(0,total-used)/100).toFixed(2);if(!fiado)paid+=cents(input.value);});
-  const remaining=Math.max(0,total-paid);rows.filter(row=>row.querySelector('select').value==='fiado').forEach((row,index)=>row.querySelector('.payment-amount').value=(index===0?remaining/100:0).toFixed(2));
-  document.querySelector('#subtotal').textContent=currency(subtotal);document.querySelector('#sale-total').textContent=currency(total);document.querySelector('#sale-pending').textContent=currency(remaining);document.querySelector('#pending-row').hidden=remaining===0;
+  rows.forEach(row=>{const input=row.querySelector('.payment-amount');const fiado=['fiado','mercadopago'].includes(row.querySelector('select').value);input.readOnly=fiado;if(automatic&&!fiado)input.value=(Math.max(0,total-used)/100).toFixed(2);if(!fiado)paid+=cents(input.value);});
+  const remaining=Math.max(0,total-paid);rows.filter(row=>['fiado','mercadopago'].includes(row.querySelector('select').value)).forEach((row,index)=>row.querySelector('.payment-amount').value=(index===0?remaining/100:0).toFixed(2));
+  document.querySelector('#subtotal').textContent=currency(subtotal);document.querySelector('#sale-total').textContent=currency(total);document.querySelector('#sale-pending').textContent=currency(remaining);document.querySelector('#pending-row').hidden=remaining===0;document.querySelector('#pending-row span').textContent=rows.some(row=>row.querySelector('select').value==='mercadopago')?'Aguardando Mercado Pago':'Valor em fiado';
   if(document.querySelector('#wallet-current-row')){document.querySelector('#wallet-current-row').hidden=balance<=0;document.querySelector('#wallet-current').textContent=currency(balance);}
   document.querySelector('#wallet-row').hidden=balance-used<=0;document.querySelector('#wallet-remaining').textContent=currency(balance-used);
  };

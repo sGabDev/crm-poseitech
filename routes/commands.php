@@ -1,10 +1,12 @@
 <?php
 
+use App\Jobs\SendMercadoPagoLink;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Analytics;
 use App\Services\DatabaseCapacity;
 use App\Services\MailQueue;
+use App\Services\MercadoPago;
 use App\Services\Tenant;
 use App\Services\WhatsApp;
 use Illuminate\Support\Facades\Artisan;
@@ -104,3 +106,30 @@ Artisan::command('poseitech:whatsapp {--limit=50}', function () {
     $this->info('Fila WhatsApp processada.');
 });
 Schedule::command('poseitech:whatsapp')->everyMinute()->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);
+
+Artisan::command('poseitech:mercadopago {--limit=30}', function () {
+    foreach (DB::table('mp_deliveries')->where('channel', 'whatsapp')->where('status', 'pending')->orderBy('id')->limit(20)->get() as $delivery) {
+        app(SendMercadoPagoLink::class, ['companyId' => $delivery->company_id, 'checkoutId' => $delivery->checkout_id])->handle(app(Tenant::class), app(MercadoPago::class));
+    }
+    $query = DB::table('mp_checkouts')->whereIn('status', ['pending', 'unknown', 'creating', 'approved', 'review'])->where('created_at', '>', now()->subDays(180));
+    foreach ($query->orderBy('updated_at')->limit(max(1, min(100, (int) $this->option('limit'))))->get() as $checkout) {
+        $company = Company::find($checkout->company_id);
+        if (! $company || empty($company->mercadopago['access_token'])) {
+            continue;
+        }
+        app(Tenant::class)->company = $company;
+        try {
+            if (! $checkout->checkout_url && in_array($checkout->status, ['creating', 'unknown']) && now()->lt($checkout->expires_at)) {
+                app(MercadoPago::class)->recover($checkout);
+            }
+            app(MercadoPago::class)->refresh($checkout);
+        } catch (Throwable $error) {
+            $this->warn('Consulta indisponível para o link #'.$checkout->id.'. Será tentada novamente.');
+        } finally {
+            // Fair rotation, including preferences without any payment attempts yet.
+            DB::table('mp_checkouts')->where('id', $checkout->id)->update(['updated_at' => now()]);
+        }
+    }
+    $this->info('Pagamentos consultados.');
+});
+Schedule::command('poseitech:mercadopago')->everyFiveMinutes()->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);

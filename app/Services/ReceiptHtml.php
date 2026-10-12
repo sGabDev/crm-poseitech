@@ -76,8 +76,7 @@ class ReceiptHtml
         foreach (['itens', 'resumo', 'pagamentos', 'portal'] as $part) {
             $map['{'.$part.'_html}'] = view('emails.receipt-'.$part, $data)->render();
         }
-        $original = 'Olá, '.$customer->name.'. Sua compra #'.$sale->id.' foi registrada. Total: '.$values['total'].'.';
-        $map['{mensagem_html}'] = $body === $original ? '' : nl2br(e($body));
+        $map['{mensagem_html}'] = '';
 
         return self::sanitize(strtr(self::sanitize($html), $map));
     }

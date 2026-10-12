@@ -18,12 +18,14 @@ $app = Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->validateCsrfTokens(except: ['integrations/mercadopago/*/webhook']);
         $middleware->prepend(DatabaseCapacityCooldown::class);
         $middleware->alias(['company' => CompanyAccess::class]);
         $middleware->append(SecurityHeaders::class);
         $middleware->web(append: [RequirePasswordChange::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontFlash(['access_token', 'webhook_secret']);
         $exceptions->report(function (QueryException $error) {
             if (DatabaseCapacity::exhausted($error)) {
                 DatabaseCapacity::pause();

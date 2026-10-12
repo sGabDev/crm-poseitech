@@ -10,8 +10,8 @@ return [
     ],
     'defaults' => ['sales', 'customers', 'products', 'cash', 'credit', 'finance', 'portal', 'whatsapp', 'message_templates'],
     'methods' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix'],
-    'payment_labels' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'credit' => 'Cartão', 'debit' => 'Cartão', 'boleto' => 'Boleto', 'other' => 'Outros'],
-    'sale_methods' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'fiado' => 'Fiado'],
+    'payment_labels' => ['mercadopago' => 'Mercado Pago', 'cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'credit' => 'Cartão', 'debit' => 'Cartão', 'boleto' => 'Boleto', 'other' => 'Outros'],
+    'sale_methods' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'fiado' => 'Fiado', 'mercadopago' => 'Mercado Pago · link de pagamento'],
     'order_statuses' => ['received' => 'Recebido', 'confirmed' => 'Confirmado', 'preparing' => 'Preparando', 'ready' => 'Pronto', 'shipping' => 'Saiu para entrega', 'delivered' => 'Entregue', 'cancelled' => 'Cancelado'],
     'resources' => [
         'customers' => ['title' => 'Clientes', 'module' => 'customers', 'fields' => [

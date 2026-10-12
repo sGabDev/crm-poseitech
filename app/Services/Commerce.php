@@ -129,6 +129,10 @@ class Commerce
                 $this->fail('Total da venda inválido.');
             }
             $submitted = collect($d['payments'] ?? []);
+            $mercadoPago = $submitted->contains('method', 'mercadopago');
+            if ($mercadoPago && ($submitted->count() !== 1 || ! $customer || $this->t->company->currency !== 'BRL' || ! ($this->t->company->mercadopago['enabled'] ?? false))) {
+                $this->fail('Para vender pelo Mercado Pago, configure a integração, selecione um cliente e use somente essa forma de pagamento em BRL.');
+            }
             $wallet = 0;
             if ($customer && ! empty($d['use_balance'])) {
                 $this->t->authorize('credit', true);
@@ -137,13 +141,15 @@ class Commerce
             if (count($submitted) === 1 && ! empty($d['auto_payment'])) {
                 $submitted = $submitted->map(fn ($p) => array_merge($p, ['amount' => number_format(($total - $wallet) / 100, 2, '.', '')]));
             }
-            $payments = $submitted->filter(fn ($p) => $p['method'] !== 'fiado' && Tenant::cents($p['amount'] ?? 0) > 0);
+            $payments = $submitted->filter(fn ($p) => ! in_array($p['method'], ['fiado', 'mercadopago']) && Tenant::cents($p['amount'] ?? 0) > 0);
             $paid = $wallet + $payments->sum(fn ($p) => Tenant::cents($p['amount']));
             if ($paid > $total) {
                 $this->fail('Os pagamentos excedem o total da venda. Informe o valor recebido sem o troco.');
             }
             if ($paid < $total) {
-                $this->t->authorize('credit', true);
+                if (! $mercadoPago) {
+                    $this->t->authorize('credit', true);
+                }
                 if (! $customer) {
                     $this->fail('Selecione um cliente para registrar fiado.');
                 }
@@ -153,11 +159,12 @@ class Commerce
                 $methods[] = 'wallet';
             }
             if ($paid < $total) {
-                $methods[] = 'fiado';
+                $methods[] = $mercadoPago ? 'mercadopago' : 'fiado';
             }
             $saleId = $this->t->insert('sales', ['customer_id' => $customer?->id, 'user_id' => auth()->id(), 'coupon_id' => $coupon?->id,
                 'subtotal' => $subtotal, 'discount' => $discount, 'extra' => $extra, 'total' => $total, 'cost' => $cost, 'paid' => $paid, 'wallet_used' => $wallet,
-                'notes' => $d['notes'] ?? null, 'receipt_hash' => hash('sha256', Str::random(64)), 'request_key' => $d['request_key'], 'payment_methods' => json_encode($methods), 'fiado_amount' => $total - $paid]);
+                'status' => $mercadoPago && $paid < $total ? 'pending_payment' : 'completed',
+                'notes' => $d['notes'] ?? null, 'receipt_hash' => hash('sha256', Str::random(64)), 'request_key' => $d['request_key'], 'payment_methods' => json_encode($methods), 'fiado_amount' => $mercadoPago ? 0 : $total - $paid]);
             if ($wallet) {
                 $this->t->insert('wallet_entries', ['customer_id' => $customer->id, 'user_id' => auth()->id(), 'sale_id' => $saleId, 'amount' => -$wallet, 'description' => 'Saldo utilizado na venda #'.$saleId]);
             }
@@ -175,7 +182,7 @@ class Commerce
                 $this->payment($saleId, null, $customer?->id, Tenant::cents($p['amount']), $p['method'], 'in');
             }
             if ($paid < $total) {
-                $this->t->insert('accounts', ['type' => 'receivable', 'description' => 'Fiado venda #'.$saleId,
+                $this->t->insert('accounts', ['type' => 'receivable', 'description' => ($mercadoPago ? 'Mercado Pago venda #' : 'Fiado venda #').$saleId,
                     'customer_id' => $customer->id, 'sale_id' => $saleId, 'amount' => $total - $paid,
                     'due_date' => $this->nextDueDate($customer->due_day), 'origin' => 'credit']);
             }
@@ -205,13 +212,13 @@ class Commerce
                 $this->t->update('catalog_orders', $catalogOrder->id, ['status' => 'converted', 'sale_id' => $saleId]);
             }
             $this->t->audit('sale.created', 'sales', $saleId, null, ['total' => $total, 'paid' => $paid]);
-            if ($customer && filter_var($customer->email, FILTER_VALIDATE_EMAIL)) {
+            if (! $mercadoPago && $customer && filter_var($customer->email, FILTER_VALIDATE_EMAIL)) {
                 $templates = app(MessageTemplates::class);
                 $content = $templates->automatic('email', 'receipt', $templates->values($customer, $this->t->find('sales', $saleId)), ['subject' => 'Comprovante da compra #'.$saleId.' · '.$this->t->company->name, 'body' => 'Olá, '.$customer->name.'. Sua compra #'.$saleId.' foi registrada. Total: '.Tenant::money($total).'.']);
                 $this->t->insert('email_logs', ['sale_id' => $saleId, 'customer_id' => $customer->id, 'recipient' => $customer->email] + $content);
             }
 
-            if ($messageId = app(WhatsApp::class)->queue($saleId)) {
+            if (! $mercadoPago && ($messageId = app(WhatsApp::class)->queue($saleId))) {
                 $companyId = $this->t->id();
                 DB::afterCommit(function () use ($companyId, $messageId) {
                     SendWhatsAppReceipt::dispatchAfterResponse($companyId, $messageId);
@@ -222,9 +229,9 @@ class Commerce
         }, 3);
     }
 
-    public function payment(?int $sale, ?int $account, ?int $customer, int $amount, string $method, string $direction): int
+    public function payment(?int $sale, ?int $account, ?int $customer, int $amount, string $method, string $direction, ?int $verifiedActor = null): int
     {
-        if (! array_key_exists($method, config('poseitech.methods')) || $amount <= 0) {
+        if ((! array_key_exists($method, config('poseitech.methods')) && ! ($method === 'mercadopago' && $verifiedActor)) || $amount <= 0) {
             $this->fail('Pagamento inválido.');
         }
         $register = $this->t->query('cash_registers')->whereNull('closed_at')->first();
@@ -234,9 +241,10 @@ class Commerce
         if ($direction === 'out' && $method === 'cash' && $register && $this->expected($register) < $amount) {
             $this->fail('Saldo insuficiente no caixa.');
         }
-        $id = $this->t->insert('payments', ['sale_id' => $sale, 'account_id' => $account, 'customer_id' => $customer, 'user_id' => auth()->id(), 'amount' => $amount, 'method' => $method, 'direction' => $direction]);
+        $actor = $verifiedActor ?? auth()->id();
+        $id = $this->t->insert('payments', ['sale_id' => $sale, 'account_id' => $account, 'customer_id' => $customer, 'user_id' => $actor, 'amount' => $amount, 'method' => $method, 'direction' => $direction]);
         if ($register) {
-            $this->t->insert('cash_transactions', ['cash_register_id' => $register->id, 'payment_id' => $id, 'user_id' => auth()->id(),
+            $this->t->insert('cash_transactions', ['cash_register_id' => $register->id, 'payment_id' => $id, 'user_id' => $actor,
                 'description' => $sale ? 'Venda #'.$sale : ($account ? 'Conta #'.$account : 'Depósito cliente #'.$customer), 'method' => $method, 'amount' => $direction === 'in' ? $amount : -$amount]);
         }
 
@@ -260,10 +268,22 @@ class Commerce
 
     public function settle(int $id, array $d): void
     {
-        DB::transaction(function () use ($id, $d) {
+        $this->settleData($id, $d);
+    }
+
+    public function settleConfirmedMercadoPago(int $id, int $amount, int $actor, string $requestKey): void
+    {
+        $this->settleData($id, ['amount' => number_format($amount / 100, 2, '.', ''), 'method' => 'mercadopago', 'request_key' => $requestKey], $actor);
+    }
+
+    private function settleData(int $id, array $d, ?int $verifiedActor = null): void
+    {
+        DB::transaction(function () use ($id, $d, $verifiedActor) {
             $this->t->lock();
             $a = $this->t->find('accounts', $id);
-            $this->t->authorize($a->origin === 'credit' ? 'credit' : 'finance', true);
+            if (! $verifiedActor) {
+                $this->t->authorize($a->origin === 'credit' ? 'credit' : 'finance', true);
+            }
             if (! empty($d['request_key']) && $this->t->query('payments')->where('request_key', $d['request_key'])->exists()) {
                 return;
             }
@@ -271,7 +291,7 @@ class Commerce
             if ($a->status !== 'pending' || $amount <= 0 || $amount > $a->amount - $a->paid) {
                 $this->fail('Valor superior ao saldo ou conta já encerrada.');
             }
-            $paymentId = $this->payment($a->sale_id, $a->id, $a->customer_id, $amount, $d['method'], $a->type === 'receivable' ? 'in' : 'out');
+            $paymentId = $this->payment($a->sale_id, $a->id, $a->customer_id, $amount, $d['method'], $a->type === 'receivable' ? 'in' : 'out', $verifiedActor);
             if (! empty($d['debt_receipt_id'])) {
                 $this->t->update('payments', $paymentId, ['debt_receipt_id' => $d['debt_receipt_id']]);
             }
@@ -377,6 +397,9 @@ class Commerce
             $sale = $this->t->find('sales', $id);
             if ($sale->status === 'cancelled') {
                 $this->fail('Venda já cancelada.');
+            }
+            if ($this->t->query('payments')->where('sale_id', $id)->where('method', 'mercadopago')->whereNull('reversed_at')->exists()) {
+                $this->fail('Esta venda recebeu um pagamento Mercado Pago. Faça o reembolso na conta Mercado Pago e aguarde a confirmação antes de cancelar a venda.');
             }
             if ($sale->wallet_used) {
                 $this->t->insert('wallet_entries', ['customer_id' => $sale->customer_id, 'user_id' => auth()->id(), 'sale_id' => $id, 'amount' => $sale->wallet_used, 'description' => 'Saldo devolvido pelo cancelamento #'.$id]);
