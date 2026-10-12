@@ -2,12 +2,13 @@
 
 return [
     'modules' => [
+        'whatsapp' => 'Conexão do WhatsApp', 'message_templates' => 'Modelos de mensagem',
         'sales' => 'Vendas', 'customers' => 'Clientes / CRM', 'products' => 'Produtos e serviços',
         'stock' => 'Estoque', 'cash' => 'Caixa', 'credit' => 'Fiados', 'finance' => 'Fornecedores e relatórios',
         'campaigns' => 'Campanhas', 'loyalty' => 'Fidelidade', 'orders' => 'Pedidos',
         'delivery' => 'Delivery', 'catalog' => 'Catálogo público', 'portal' => 'Portal do cliente',
     ],
-    'defaults' => ['sales', 'customers', 'products', 'cash', 'credit', 'finance', 'portal'],
+    'defaults' => ['sales', 'customers', 'products', 'cash', 'credit', 'finance', 'portal', 'whatsapp', 'message_templates'],
     'methods' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix'],
     'payment_labels' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'credit' => 'Cartão', 'debit' => 'Cartão', 'boleto' => 'Boleto', 'other' => 'Outros'],
     'sale_methods' => ['cash' => 'Dinheiro', 'card' => 'Cartão', 'pix' => 'Pix', 'fiado' => 'Fiado'],

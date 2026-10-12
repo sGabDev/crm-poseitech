@@ -35,10 +35,13 @@
 <section class="card">@include('components.items')<p>Desconto: {{ \App\Services\Tenant::money($sale->discount) }} · Acréscimos: {{ \App\Services\Tenant::money($sale->extra) }}</p>
 <p>{{ $sale->notes }}</p>
 <div class="actions">
+@if($company->enabled('whatsapp'))
 <form method="post" action="{{ url('/sales/'.$sale->id.'/whatsapp') }}">@csrf<button class="secondary">Enviar WhatsApp</button></form>
 <a class="button secondary" href="https://wa.me/?text={{ rawurlencode('Comprovante de compra: '.url('/receipt/'.$sale->receipt_hash)) }}" target="_blank" rel="noopener">Compartilhar por WhatsApp</a>
+@endif
 <form method="post" action="{{ url('/sales/'.$sale->id.'/email') }}">@csrf<button class="secondary">Enviar comprovante por e-mail</button>
 </form>
+@if($sale->customer_id && $company->enabled('message_templates') && auth()->user()->allows('message_templates',true))<a class="button secondary" href="{{ url('/message-templates?sale_id='.$sale->id.'&customer_id='.$sale->customer_id.'&purpose=receipt&channel=email') }}">Enviar com modelo</a>@endif
 </div>
 @if($whatsappMessage ?? null)
 <p role="status">WhatsApp: {{ ['pending'=>'Na fila','sending'=>'Enviando','sent'=>'Enviado','failed'=>'Falhou','unknown'=>'Sem confirmação','cancelled'=>'Cancelado'][$whatsappMessage->status] ?? $whatsappMessage->status }}. {{ $whatsappMessage->error }}</p>

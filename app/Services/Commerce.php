@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\SendWhatsAppReceipt;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -205,13 +206,15 @@ class Commerce
             }
             $this->t->audit('sale.created', 'sales', $saleId, null, ['total' => $total, 'paid' => $paid]);
             if ($customer && filter_var($customer->email, FILTER_VALIDATE_EMAIL)) {
-                $this->t->insert('email_logs', ['sale_id' => $saleId, 'customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Comprovante da compra #'.$saleId.' · '.$this->t->company->name, 'body' => 'Olá, '.$customer->name.'. Sua compra #'.$saleId.' foi registrada. Total: '.Tenant::money($total).'.']);
+                $templates = app(MessageTemplates::class);
+                $content = $templates->automatic('email', 'receipt', $templates->values($customer, $this->t->find('sales', $saleId)), ['subject' => 'Comprovante da compra #'.$saleId.' · '.$this->t->company->name, 'body' => 'Olá, '.$customer->name.'. Sua compra #'.$saleId.' foi registrada. Total: '.Tenant::money($total).'.']);
+                $this->t->insert('email_logs', ['sale_id' => $saleId, 'customer_id' => $customer->id, 'recipient' => $customer->email] + $content);
             }
 
             if ($messageId = app(WhatsApp::class)->queue($saleId)) {
                 $companyId = $this->t->id();
                 DB::afterCommit(function () use ($companyId, $messageId) {
-                    \App\Jobs\SendWhatsAppReceipt::dispatchAfterResponse($companyId, $messageId);
+                    SendWhatsAppReceipt::dispatchAfterResponse($companyId, $messageId);
                 });
             }
 

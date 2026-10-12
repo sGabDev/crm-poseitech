@@ -1,4 +1,5 @@
 {{ $company->name }} — Compra #{{ $sale->id }}
+{{ $body ?? '' }}
 Olá, {{ $customer->name }}.
 Status: {{ $sale->status==='cancelled'?'Cancelada':'Registrada' }}
 Total: {{ $company->currency }} {{ number_format($sale->total/100,2,',','.') }}

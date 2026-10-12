@@ -10,6 +10,7 @@
 <p style="margin:14px 0 0;color:#d1e7e9;font-size:14px">Compra #{{ $sale->id }} · {{ \Carbon\Carbon::parse($sale->created_at)->timezone($company->timezone)->format('d/m/Y H:i') }}</p>
 </td></tr>
 <tr><td style="padding:30px 32px 16px"><h2 style="margin:0 0 12px;font-size:23px">Olá, {{ $customer->name }}!</h2><p style="font-size:15px;line-height:1.7;margin:0">{{ $sale->status==='cancelled'?'Esta compra foi cancelada. Consulte abaixo os registros e estornos.':'Sua compra foi registrada. Reunimos os detalhes para você consultar sempre que precisar.' }}</p></td></tr>
+@if($body ?? null)<tr><td style="padding:12px 32px;white-space:pre-wrap;font-size:15px;line-height:1.7">{{ $body }}</td></tr>@endif
 <tr><td style="padding:12px 32px"><table role="presentation" width="100%" style="background:#eaf7f3;border-radius:12px"><tr><td style="padding:22px"><span style="font-size:12px;color:#326c61">TOTAL DA COMPRA</span><p style="margin:8px 0 0;font-size:34px;font-weight:bold;color:#087e70">{{ $money($sale->total) }}</p></td></tr></table></td></tr>
 <tr><td style="padding:20px 32px"><h2 style="font-size:18px;margin:0 0 14px">Seus itens</h2>
 <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px"><thead><tr><th align="left" style="padding:10px 0;border-bottom:1px solid #dbe7ea">Item</th><th align="right" style="padding:10px 0;border-bottom:1px solid #dbe7ea">Valor</th></tr></thead><tbody>

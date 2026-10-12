@@ -45,6 +45,11 @@ Route::middleware(['auth', 'can:platform'])->group(function () {
     Route::post('/admin/settings', [AdminController::class, 'settings']);
 });
 Route::middleware(['auth', 'company'])->group(function () {
+    Route::get('/message-templates', [\App\Http\Controllers\MessageTemplateController::class, 'index']);
+    Route::post('/message-templates/send', [\App\Http\Controllers\MessageTemplateController::class, 'send'])->middleware('throttle:10,1');
+    Route::post('/message-templates/{id}/delete', [\App\Http\Controllers\MessageTemplateController::class, 'delete'])->whereNumber('id');
+    Route::post('/message-templates/{id?}', [\App\Http\Controllers\MessageTemplateController::class, 'save'])->whereNumber('id');
+    Route::middleware(\App\Http\Middleware\WhatsAppModule::class)->group(function () {
     Route::get('/whatsapp/atendimento', [WhatsAppInboxController::class, 'index']);
     Route::post('/whatsapp/atendimento/state', [WhatsAppInboxController::class, 'state'])->middleware('throttle:120,1');
     Route::post('/whatsapp/atendimento/watch', [WhatsAppInboxController::class, 'watch'])->middleware('throttle:120,1');
@@ -64,6 +69,7 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/whatsapp/{id}/status', [WhatsAppController::class, 'status'])->whereNumber('id');
     Route::post('/whatsapp/{id}', [WhatsAppController::class, 'action'])->whereNumber('id')->middleware('throttle:20,1');
     Route::post('/sales/{id}/whatsapp', [WhatsAppController::class, 'receipt'])->whereNumber('id')->middleware('throttle:5,1');
+    });
     Route::post('/customer-deposits', [AccountOperationsController::class, 'deposit']);
     Route::get('/cash-flow', [AccountOperationsController::class, 'flow']);
     Route::post('/cash-flow/categories', [AccountOperationsController::class, 'categories']);

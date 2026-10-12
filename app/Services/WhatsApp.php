@@ -63,6 +63,10 @@ class WhatsApp
 
     public function queue(int $saleId, bool $manual = false): ?int
     {
+        if (! $this->t->company->enabled('whatsapp')) {
+            return null;
+        }
+
         return DB::transaction(function () use ($saleId, $manual) {
             $this->t->lock();
             $sale = $this->t->find('sales', $saleId);
@@ -86,9 +90,13 @@ class WhatsApp
                 return $existing->id;
             }
 
+            $content = app(MessageTemplates::class)->automatic('whatsapp', 'receipt', app(MessageTemplates::class)->values($customer, $sale), [
+                'body' => 'Olá, '.$customer->name.'! Sua compra #'.$saleId.' na '.$this->t->company->name.' foi finalizada. Total: '.Tenant::money($sale->total).".\nComprovante: ".url('/receipt/'.$sale->receipt_hash),
+            ]);
+
             return $this->t->insert('whatsapp_messages', [
                 'connection_id' => $connection->id, 'sale_id' => $saleId, 'customer_id' => $customer->id, 'recipient' => self::phone($customer->phone),
-                'body' => 'Olá, '.$customer->name.'! Sua compra #'.$saleId.' na '.$this->t->company->name.' foi finalizada. Total: '.Tenant::money($sale->total).".\nComprovante: ".url('/receipt/'.$sale->receipt_hash),
+                'body' => $content['body'],
             ]);
         });
     }
@@ -103,7 +111,7 @@ class WhatsApp
         try {
             $sale = $this->t->find('sales', $message->sale_id);
             $customer = $this->t->find('customers', $message->customer_id);
-            if ($sale->status === 'cancelled' || $customer->anonymized_at) {
+            if (! $this->t->company->enabled('whatsapp') || $sale->status === 'cancelled' || $customer->anonymized_at) {
                 $q->update(['status' => 'cancelled', 'updated_at' => now()]);
 
                 return;

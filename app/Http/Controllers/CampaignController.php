@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\Analytics;
+use App\Services\MessageTemplates;
 use App\Services\Tenant;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -78,8 +79,10 @@ class CampaignController extends Controller
 
                 return $existing->status;
             }
-            $this->t->insert('email_logs', ['sale_id' => $id, 'customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Comprovante de compra #'.$id,
+            $templates = app(MessageTemplates::class);
+            $content = $templates->automatic('email', 'receipt', $templates->values($customer, $sale), ['subject' => 'Comprovante de compra #'.$id,
                 'body' => 'Olá, '.$customer->name.'. Seu comprovante de '.Tenant::money($sale->total).' está disponível em '.url('/receipt/'.$sale->receipt_hash)]);
+            $this->t->insert('email_logs', ['sale_id' => $id, 'customer_id' => $customer->id, 'recipient' => $customer->email] + $content);
 
             return 'pending';
         });
@@ -95,8 +98,10 @@ class CampaignController extends Controller
         abort_unless($account->type === 'receivable' && $account->status === 'pending' && $account->customer_id, 422, 'Conta sem cobrança pendente.');
         $customer = $this->t->find('customers', $account->customer_id);
         abort_unless($customer->email && ! $customer->anonymized_at && $this->t->company->smtp, 422, 'Cadastre o e-mail do cliente e configure o SMTP.');
-        $this->t->insert('email_logs', ['customer_id' => $customer->id, 'recipient' => $customer->email, 'subject' => 'Lembrete de vencimento • '.$this->t->company->name,
+        $templates = app(MessageTemplates::class);
+        $content = $templates->automatic('email', 'billing', $templates->values($customer, null, $account), ['subject' => 'Lembrete de vencimento • '.$this->t->company->name,
             'body' => 'Olá, '.$customer->name.'. A conta '.$account->description.' possui saldo de '.Tenant::money($account->amount - $account->paid).' e vencimento em '.Carbon::parse($account->due_date)->format('d/m/Y').'. Entre em contato para combinar o pagamento. Se já pagou, fale com nossa equipe.']);
+        $this->t->insert('email_logs', ['customer_id' => $customer->id, 'recipient' => $customer->email] + $content);
         $this->t->audit('billing.queued', 'accounts', $id);
 
         return back()->with('success', 'Lembrete colocado na fila.');

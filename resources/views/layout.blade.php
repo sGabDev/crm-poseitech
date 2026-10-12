@@ -31,7 +31,7 @@
 </div>
 </div>
 <nav aria-label="Navegação principal">
-@if(isset($company) && $company->enabled('customers') && auth()->user()->allows('customers'))
+@if(isset($company) && $company->enabled('whatsapp') && $company->enabled('customers') && auth()->user()->allows('customers'))
 <a class="{{ request()->is('whatsapp/atendimento*') ? 'active' : '' }}" href="{{ url('/whatsapp/atendimento') }}"><span class="nav-symbol">◉</span>WhatsApp · Atendimento</a>
 @endif
 <span class="nav-label">Vendas e clientes</span>
@@ -52,10 +52,11 @@
 @endif
 @endforeach
 @can('manage-company')<span class="nav-label">GERENCIAR</span>
-<a class="{{ request()->is('whatsapp') ? 'active' : '' }}" href="{{ url('/whatsapp') }}">Conexão do WhatsApp</a>
+@if($company->enabled('whatsapp'))<a class="{{ request()->is('whatsapp') ? 'active' : '' }}" href="{{ url('/whatsapp') }}">Conexão do WhatsApp</a>@endif
 <a href="{{ url('/alerts') }}">Notificações</a>
 @endcan
 <a href="{{ url('/settings') }}">Configurações</a>
+@if($company->enabled('message_templates') && auth()->user()->allows('message_templates'))<a class="{{ request()->is('message-templates*') ? 'active' : '' }}" href="{{ url('/message-templates') }}">Modelos de mensagem</a>@endif
 @endif
 @can('platform')<a href="{{ url('/admin') }}">Super Admin PoseiTech</a>@endcan
 </nav>

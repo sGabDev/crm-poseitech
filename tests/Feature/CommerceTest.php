@@ -60,6 +60,72 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_message_templates_are_scoped_validated_and_used_in_sale_receipts(): void
+    {
+        $data = ['name' => 'Meu comprovante', 'channel' => 'email', 'purpose' => 'receipt', 'subject' => 'Compra {venda} · {empresa}', 'body' => 'Obrigado, {nome}! Total {total}. {comprovante}', 'is_default' => 1];
+        $this->post('/message-templates', $data)->assertSessionHasNoErrors()->assertRedirect('/message-templates');
+        $first = DB::table('message_templates')->value('id');
+        $this->get('/message-templates')->assertOk()->assertSee('Meu comprovante');
+        $this->post('/message-templates', array_replace($data, ['name' => 'Novo padrão']))->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('message_templates', ['id' => $first, 'is_default' => false]);
+        $this->post('/message-templates', array_replace($data, ['body' => '{senha}']))->assertSessionHasErrors('body');
+        $saleId = app(Commerce::class)->sell($this->sale());
+        $email = DB::table('email_logs')->where('sale_id', $saleId)->first();
+        $this->assertSame('Compra '.$saleId.' · Empresa A', $email->subject);
+        $this->assertStringContainsString('Obrigado, Cliente A! Total R$ 200,00.', $email->body);
+        $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'outra-template', 'modules' => array_keys(config('poseitech.modules'))]);
+        $foreign = DB::table('message_templates')->insertGetId(['company_id' => $other->id, 'name' => 'Privado', 'channel' => 'email', 'purpose' => 'general', 'body' => 'Segredo']);
+        $this->get('/message-templates?edit='.$foreign)->assertNotFound();
+        $this->post('/message-templates/'.$foreign.'/delete')->assertNotFound();
+    }
+
+    public function test_manual_template_email_is_idempotent_and_whatsapp_uses_chat_protocol(): void
+    {
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'from' => 'crm@example.test']]);
+        $template = app(Tenant::class)->insert('message_templates', ['name' => 'Saudação', 'channel' => 'email', 'purpose' => 'general', 'subject' => 'Olá {nome}', 'body' => 'Somos {empresa}']);
+        $data = ['template_id' => $template, 'customer_id' => $this->customer, 'request_key' => (string) Str::uuid()];
+        $this->post('/message-templates/send', $data)->assertSessionHasNoErrors();
+        $this->post('/message-templates/send', $data)->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('email_logs', 1);
+        $this->assertDatabaseCount('template_deliveries', 1);
+        app(Tenant::class)->update('message_templates', $template, ['channel' => 'whatsapp']);
+        app(Tenant::class)->update('customers', $this->customer, ['phone' => '11999999999', 'whatsapp_consent' => true]);
+        app(Tenant::class)->insert('whatsapp_connections', ['name' => 'Bot', 'automatic' => true]);
+        config(['whatsapp.token' => str_repeat('a', 32)]);
+        Http::fake(['*/chat-resolve' => Http::response(['jid' => '5511999999999@s.whatsapp.net']), '*/chat-send' => Http::response(['status' => 'sent'])]);
+        $data['request_key'] = (string) Str::uuid();
+        $this->post('/message-templates/send', $data)->assertSessionHasNoErrors();
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/chat-send') && $r['requestKey'] === $data['request_key'] && $r['text'] === 'Somos Empresa A');
+        $this->assertDatabaseHas('template_deliveries', ['request_key' => $data['request_key'], 'status' => 'sent']);
+        $this->post('/message-templates/send', $data)->assertSessionHasNoErrors();
+        Http::assertSentCount(2);
+    }
+
+    public function test_billing_template_renders_balance_and_refuses_another_customers_account(): void
+    {
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'from' => 'crm@example.test']]);
+        app(Commerce::class)->sell($this->sale());
+        $account = DB::table('accounts')->first();
+        $data = ['name' => 'Cobrança amigável', 'channel' => 'email', 'purpose' => 'billing', 'subject' => 'Pagamento {empresa}', 'body' => '{nome}: {descricao}, saldo {saldo}, vence {vencimento}', 'is_default' => 1];
+        $this->post('/message-templates', $data)->assertSessionHasNoErrors();
+        $this->post('/accounts/'.$account->id.'/email')->assertSessionHasNoErrors();
+        $mail = DB::table('email_logs')->whereNull('sale_id')->first();
+        $this->assertSame('Pagamento Empresa A', $mail->subject);
+        $this->assertStringContainsString('Cliente A:', $mail->body);
+        $this->assertStringContainsString(Tenant::money($account->amount - $account->paid), $mail->body);
+        $another = app(Tenant::class)->insert('customers', ['name' => 'Outro cliente', 'email' => 'other@example.test']);
+        $this->post('/message-templates/send', ['template_id' => DB::table('message_templates')->value('id'), 'customer_id' => $another, 'account_id' => $account->id, 'request_key' => (string) Str::uuid()])->assertStatus(422);
+    }
+
+    public function test_disabled_communication_modules_block_management_and_sending(): void
+    {
+        $this->company->update(['modules' => ['sales', 'customers', 'products', 'cash']]);
+        $this->get('/message-templates')->assertForbidden();
+        $this->get('/whatsapp')->assertForbidden();
+        $this->get('/whatsapp/atendimento')->assertForbidden();
+        $this->assertNull(app(WhatsApp::class)->queue(999));
+    }
+
     public function test_completed_sale_can_start_a_fresh_sale_without_reusing_items_or_request_key(): void
     {
         $data = $this->sale();
