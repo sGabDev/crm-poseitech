@@ -3,6 +3,7 @@
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Analytics;
+use App\Services\DatabaseCapacity;
 use App\Services\MailQueue;
 use App\Services\Tenant;
 use App\Services\WhatsApp;
@@ -87,8 +88,8 @@ Artisan::command('poseitech:mail {--limit=50}', function () {
         }
     } $this->info('Fila processada.');
 });
-Schedule::command('poseitech:automate')->dailyAt('06:00')->withoutOverlapping();
-Schedule::command('poseitech:mail')->everyMinute()->withoutOverlapping();
+Schedule::command('poseitech:automate')->dailyAt('06:00')->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);
+Schedule::command('poseitech:mail')->everyMinute()->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);
 
 Artisan::command('poseitech:whatsapp {--limit=50}', function () {
     DB::table('whatsapp_messages')->where('status', 'sending')->where('updated_at', '<', now()->subMinutes(2))->update(['status' => 'pending', 'updated_at' => now()]);
@@ -102,4 +103,4 @@ Artisan::command('poseitech:whatsapp {--limit=50}', function () {
     }
     $this->info('Fila WhatsApp processada.');
 });
-Schedule::command('poseitech:whatsapp')->everyTenSeconds()->withoutOverlapping();
+Schedule::command('poseitech:whatsapp')->everyMinute()->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);

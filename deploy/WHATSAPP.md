@@ -40,7 +40,7 @@ O Node carrega o `.env` a partir da pasta atual: execute sempre na raiz. A chave
 
 ## Processos permanentes
 
-Mantenha **um único processo** `npm run whatsapp` por diretório de sessões, com reinício automático (systemd, PM2 em modo fork com uma instância, ou serviço Windows) e diretório de trabalho na raiz. Mantenha também `php artisan schedule:work` ativo. O scheduler processa WhatsApp a cada 10 segundos e mantém os demais agendamentos de e-mail. Em Linux, o cron Laravel `* * * * * cd /caminho/crm && php artisan schedule:run` também suporta as tarefas menores que um minuto; não configure os dois simultaneamente.
+Mantenha **um único processo** `npm run whatsapp` por diretório de sessões, com reinício automático (systemd, PM2 em modo fork com uma instância, ou serviço Windows) e diretório de trabalho na raiz. Mantenha também `php artisan schedule:work` ativo. O scheduler processa novas tentativas de WhatsApp a cada minuto e mantém os demais agendamentos de e-mail. Em Linux, o cron Laravel `* * * * * cd /caminho/crm && php artisan schedule:run` também suporta as tarefas menores que um minuto; não configure os dois simultaneamente.
 
 Sessões e chaves Signal são armazenadas em snapshots criptografados AES-256-GCM, com escrita serializada e substituição atémica. Há um arquivo de lock para impedir duas instâncias: após parada abrupta, confirme que nenhum processo usa o diretório, remova apenas a pasta vazia `storage/app/private/whatsapp/.service-lock` e reinicie. A conexão é restaurada automaticamente; logout pelo celular exige novo QR code.
 
@@ -52,7 +52,15 @@ Sessões e chaves Signal são armazenadas em snapshots criptografados AES-256-GC
 4. Finalize uma venda com cliente identificado e telefone válido. O comprovante fica na fila sem depender da disponibilidade momentânea do WhatsApp.
 5. A tela da venda também oferece **Enviar WhatsApp** e **Enviar comprovante por e-mail**. O botão do WhatsApp tenta enviar imediatamente, recupera falhas e mostra o resultado na venda; não duplica envios concluídos.
 
-A primeira tentativa automática é iniciada depois de salvar a venda e finalizar a resposta da página, sem exigir um worker de fila. O agendador continua necessário para recuperar falhas e processar pendências. As ações do menu retornam para páginas HTML; o JSON de status é usado somente pelas consultas em segundo plano.
+A primeira tentativa automática é iniciada depois de salvar a venda e finalizar a resposta da página, sem exigir um worker de fila. O agendador continua necessário para recuperar falhas e processar pendências, uma vez por minuto. As ações do menu retornam para páginas HTML; o JSON de status é usado somente pelas consultas em segundo plano.
+
+## Limite de conexões do banco
+
+A página consulta cada bot uma vez ao abrir e continua somente para conexões em andamento, a cada 12 segundos por até 2 minutos. Ao conectar, ficar indisponível ou atingir esse prazo, as consultas param. “Verificar conexão” inicia uma nova consulta. A aba oculta pausa as atualizações; as requisições são sequenciais e têm timeout.
+
+O erro MySQL 1226 (`max_connections_per_hour`) significa que a hospedagem bloqueou novas conexões para esse usuário. O CRM apresenta uma página temporária com status 503 e pausa tentativas por 5 minutos, inclusive os agendamentos locais. Isso não altera nem remove o limite da hospedagem: é necessário aguardar a liberação ou solicitar sua revisão ao provedor. Não mantenha um agendador local e outro em produção acessando o mesmo banco sem necessidade.
+
+Depois de atualizar os arquivos, execute `php artisan view:clear` e `php artisan config:clear`. Use apenas um agendador no servidor do CRM. As conexões Baileys permanecem no servidor separado.
 
 São feitas até 10 tentativas para indisponibilidade do serviço, número inválido ou bot desconectado. Depois de corrigir a causa, use o botão da venda para recolocar uma falha na fila. Vendas canceladas e clientes anonimizados não são enviados. Envios pendentes preservam o bot escolhido no momento da venda.
 

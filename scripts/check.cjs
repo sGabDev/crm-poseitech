@@ -17,6 +17,7 @@ for (const dir of ['app', 'bootstrap', 'config', 'database/migrations', 'databas
 for (const file of fs.readdirSync('public/assets').filter(file=>file.endsWith('.js'))) run(process.execPath, ['--check', path.join('public/assets',file)]);
 console.log('Sintaxe PHP e JavaScript válida.');
 if (process.argv.includes('--test')) {
+  run(process.execPath, ['scripts/whatsapp-poll.test.cjs']);
   const result = spawnSync(php, ['artisan', 'test', '--compact', '--no-ansi'], { stdio: 'inherit', windowsHide: true });
   process.exit(result.status ?? 1);
 }

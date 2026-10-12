@@ -6,6 +6,7 @@
 <title>@yield('title','Visão geral') · PoseiTech CRM</title>
 <link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ filemtime(public_path('assets/app.css')) }}">
 <link rel="stylesheet" href="{{ asset('assets/layout-fixes.css') }}?v={{ filemtime(public_path('assets/layout-fixes.css')) }}">
+<link rel="stylesheet" href="{{ asset('assets/refresh.css') }}?v={{ filemtime(public_path('assets/refresh.css')) }}">
 <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}" defer>
 </script>
 </head>

@@ -45,7 +45,7 @@ class WhatsApp
             throw new \RuntimeException('Serviço WhatsApp não configurado.');
         }
 
-        return Http::withToken(config('whatsapp.token'))->connectTimeout(3)->timeout(25)
+        return Http::withToken(config('whatsapp.token'))->connectTimeout(3)->timeout(strtolower($method) === 'get' ? 5 : 25)
             ->send(strtoupper($method), rtrim(config('whatsapp.url'), '/')."/sessions/$company/$connection".$action, ['json' => $data])->throw()->json();
     }
 
