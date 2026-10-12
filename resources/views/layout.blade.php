@@ -10,7 +10,10 @@
 <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}" defer>
 </script>
 </head>
-<body>
+<body class="{{ View::hasSection('immersive') ? 'inbox-page' : '' }}">
+@hasSection('immersive')
+<main class="inbox-fullscreen">@yield('content')</main>
+@else
 @php($public = $public ?? false)
 @if(!$public && auth()->check())
 <aside class="sidebar" id="sidebar">
@@ -86,5 +89,6 @@
 <footer>PoseiTech CRM <span>Mais clareza para o seu negócio.</span>
 </footer>
 </div>
+@endif
 </body>
 </html>

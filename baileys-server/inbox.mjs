@@ -38,7 +38,7 @@ export class Inbox {
           fromMe: !!raw.key.fromMe, kind, body: String(body).slice(0, 8000), historical,
           timestamp: Number(raw.messageTimestamp || Math.floor(Date.now() / 1000)),
           filename: media?.fileName || null, mime: media?.mimetype || null,
-          status: raw.key.fromMe ? 'sent' : 'received' };
+          status: raw.key.fromMe ? (Number(raw.status) >= 4 ? 'read' : Number(raw.status) >= 3 ? 'delivered' : 'sent') : 'received' };
         if (raw.key.fromMe) event.requestKey = Object.entries(data.requests).find(([, result]) => result.id === raw.key.id)?.[0] || null;
         if (data.messages[hash]) continue;
         data.messages[hash] = { raw, event };
@@ -78,6 +78,7 @@ export class Inbox {
     socket.ev.on('messages.upsert', guarded(({ messages, type }) => this.capture(key, messages, type !== 'notify')));
     socket.ev.on('messaging-history.set', guarded(({ messages }) => this.capture(key, messages || [], true)));
     socket.ev.on('messages.update', guarded(updates => this.updates(key, updates)));
+    socket.ev.on('message-receipt.update', guarded(receipts => this.updates(key, receipts.map(({ key, receipt }) => ({ key, update: { status: receipt.readTimestamp || receipt.playedTimestamp ? 4 : receipt.receiptTimestamp ? 3 : null } })))));
     socket.ev.on('messages.delete', guarded(deleted => this.serial(key, async () => {
       const data = await this.data(key);
       for (const item of Object.values(data.messages)) {
@@ -143,8 +144,8 @@ export class Inbox {
   async read(key, socket, jid) {
     if (!socket) throw fail(409, 'Not connected');
     const data = await this.data(key);
-    const keys = Object.values(data.messages).filter(m => m.event.jid === jid && !m.event.fromMe).slice(-100).map(m => m.raw.key);
+    const keys = Object.values(data.messages).filter(m => m.event.jid === jid && !m.event.fromMe).sort((a, b) => a.event.timestamp - b.event.timestamp).slice(-100).map(m => m.raw.key);
     if (keys.length) await socket.readMessages(keys);
-    return { status: 'ok' };
+    return { status: 'ok', ids: keys.map(k => k.id) };
   }
 }

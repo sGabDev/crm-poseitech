@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const { webcrypto } = require('node:crypto');
 
-function harness({ failSend = false } = {}) {
+function harness({ failSend = false, outgoingStatus = null } = {}) {
   class Element {
     constructor(tag = 'div') { this.tagName = tag.toUpperCase(); this.children = []; this.dataset = {}; this.style = {}; this.hidden = false; this.value = ''; this.files = []; this.checked = false; this.scrollHeight = 500; this.scrollTop = 500; this.clientHeight = 300;
       const names = new Set(); this.classList = { add: name => names.add(name), remove: name => names.delete(name), contains: name => names.has(name), toggle: (name, value) => { if (value ?? !names.has(name)) names.add(name); else names.delete(name); } };
@@ -28,7 +28,7 @@ function harness({ failSend = false } = {}) {
   const filters = ['all', 'mine', 'unread'].map(filter => { const node = new Element(); node.dataset.filter = filter; return node; });
   const listeners = {}, timers = new Map(), requests = []; let sequence = 0, sendAttempts = 0;
   const chat = { id: 1, name: '<img src=x onerror=alert(1)>', phone: '5511999999999', status: 'open', unread: 0, tags: '["VIP"]', last_body: 'Olá', last_message_at: '2026-10-11 15:00:00' };
-  const message = { id: 1, direction: 'in', body: '<script>alert(1)</script>', kind: 'text', status: 'received', message_at: '2026-10-11 15:00:00' };
+  const message = { id: 1, direction: outgoingStatus ? 'out' : 'in', body: '<script>alert(1)</script>', kind: 'text', status: outgoingStatus || 'received', message_at: '2026-10-11 15:00:00' };
   const document = { hidden: false, getElementById: get, createElement: tag => new Element(tag), querySelectorAll: selector => selector === '[data-filter]' ? filters : [], querySelector: () => get('composer-wrap'), addEventListener: (name, fn) => { listeners[name] = fn; } };
   vm.runInNewContext(fs.readFileSync('public/assets/whatsapp-inbox.js', 'utf8'), {
     document, window: { matchMedia: () => ({ matches: true }), addEventListener: (name, fn) => { listeners[name] = fn; } },
@@ -82,4 +82,15 @@ test('internal-note mode sends a note flag and prevents file attachments', async
   const sent = app.requests.find(request => request.url.endsWith('/send'));
   assert.equal(sent.options.body.get('note'), '1');
   assert.equal(sent.options.body.get('body'), 'Contexto para a equipe');
+});
+test('outgoing ticks distinguish sent, delivered and confirmed read; incoming received has no tick', async () => {
+  const descendants = node => [node, ...node.children.flatMap(descendants)];
+  for (const [status, label, ticks] of [['sent', 'Enviada', '✓'], ['delivered', 'Entregue', '✓✓'], ['read', 'Lida pelo cliente', '✓✓']]) {
+    const app = harness({ outgoingStatus: status }); await tick();
+    const receipt = descendants(app.get('inbox-messages')).find(n => n['aria-label'] === label);
+    assert.ok(receipt); assert.equal(receipt.textContent, ticks); assert.equal(receipt.className.includes('read'), status === 'read');
+  }
+  const incoming = harness(); await tick();
+  const receipt = descendants(incoming.get('inbox-messages')).find(n => n['aria-label'] === 'Recebida');
+  assert.equal(receipt.textContent, '');
 });

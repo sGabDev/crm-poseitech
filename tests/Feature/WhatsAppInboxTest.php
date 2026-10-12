@@ -49,7 +49,7 @@ class WhatsAppInboxTest extends TestCase
 
     public function test_inbox_renders_and_imports_idempotently_reopens_resolved_and_handles_status(): void
     {
-        $this->get($this->base)->assertOk()->assertSee('Central de atendimento')->assertSee('Nota interna');
+        $this->get($this->base)->assertOk()->assertSee('Conversas')->assertSee('Nota interna')->assertDontSee('class="sidebar"', false)->assertDontSee('class="topbar"', false);
         app(Tenant::class)->update('whatsapp_conversations', $this->chat, ['status' => 'resolved']);
         Http::fake(['*' => Http::response(['events' => [$this->event('a', 1), $this->event('old', 2, ['historical' => true, 'timestamp' => time() - 3600]), $this->event('sent', 3, ['fromMe' => true]), ['type' => 'status', 'sequence' => 4, 'jid' => '5511999999999@s.whatsapp.net', 'id' => 'sent', 'status' => 'read']], 'cursor' => 4, 'status' => 'connected'])]);
         $response = $this->postJson($this->base.'/state', ['selected' => $this->chat, 'sync' => true])->assertOk()->assertJsonPath('selected.unread', 1)->assertJsonPath('selected.status', 'open')->assertJsonPath('connection.status', 'connected');
@@ -154,5 +154,33 @@ class WhatsAppInboxTest extends TestCase
         Http::fake(['*' => Http::response(['events' => [$this->event('confirmed', 1, ['fromMe' => true, 'requestKey' => $key]), $this->event('confirmed', 2, ['type' => 'edited', 'body' => 'Texto corrigido'])], 'cursor' => 2, 'status' => 'connected'])]);
         $this->postJson($this->base.'/state', ['selected' => $this->chat, 'sync' => true])->assertOk()->assertJsonCount(1, 'messages');
         $this->assertDatabaseHas('whatsapp_chat_messages', ['id' => $id, 'remote_id' => 'confirmed', 'status' => 'sent', 'body' => 'Texto corrigido']);
+    }
+
+    public function test_agent_signature_is_added_once_and_notes_remain_unsigned(): void
+    {
+        $this->owner->update(['name' => 'Icaro']);
+        Http::fake(['*' => Http::response(['status' => 'sent', 'id' => 'signed'])]);
+        $path = $this->base.'/conversations/'.$this->chat.'/send';
+        $key = (string) Str::uuid();
+        $this->postJson($path, ['body' => 'Olá *cliente*!', 'request_key' => $key])->assertOk()->assertJsonPath('message.body', "*Icaro:*\n\nOlá *cliente*!");
+        $this->postJson($path, ['body' => 'Olá *cliente*!', 'request_key' => $key])->assertOk();
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($r) => $r['text'] === "*Icaro:*\n\nOlá *cliente*!");
+        $this->postJson($path, ['body' => 'Somente equipe', 'note' => true, 'request_key' => (string) Str::uuid()])->assertOk()->assertJsonPath('message.body', 'Somente equipe');
+    }
+
+    public function test_incoming_read_receipts_are_only_marked_after_successful_whatsapp_request(): void
+    {
+        $t = app(Tenant::class);
+        $t->update('whatsapp_conversations', $this->chat, ['unread' => 1]);
+        $id = $t->insert('whatsapp_chat_messages', ['conversation_id' => $this->chat, 'remote_id' => 'incoming', 'direction' => 'in', 'status' => 'received', 'message_at' => now()]);
+        Http::fake(['*' => Http::sequence()->push([], 503)->push(['status' => 'ok', 'ids' => ['incoming']])]);
+        $path = $this->base.'/conversations/'.$this->chat.'/read';
+        $this->postJson($path)->assertStatus(503);
+        $this->assertDatabaseHas('whatsapp_chat_messages', ['id' => $id, 'status' => 'received']);
+        $this->assertDatabaseHas('whatsapp_conversations', ['id' => $this->chat, 'unread' => 1]);
+        $this->postJson($path)->assertOk()->assertJsonPath('ids.0', 'incoming');
+        $this->assertDatabaseHas('whatsapp_chat_messages', ['id' => $id, 'status' => 'read']);
+        $this->assertDatabaseHas('whatsapp_conversations', ['id' => $this->chat, 'unread' => 0]);
     }
 }

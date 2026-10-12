@@ -106,7 +106,7 @@ class WhatsAppInbox
         $kind = in_array($e['kind'] ?? '', ['text', 'image', 'audio', 'video', 'document', 'sticker']) ? $e['kind'] : 'text';
         $this->t->insert('whatsapp_chat_messages', ['conversation_id' => $conversation->id, 'remote_id' => mb_substr($e['id'], 0, 100),
             'direction' => ! empty($e['fromMe']) ? 'out' : 'in', 'kind' => $kind, 'body' => mb_substr($e['body'] ?? '', 0, 8000),
-            'status' => ! empty($e['fromMe']) ? 'sent' : 'received', 'filename' => mb_substr($e['filename'] ?? '', 0, 150) ?: null,
+            'status' => ! empty($e['fromMe']) ? (in_array($e['status'] ?? '', ['sent', 'delivered', 'read']) ? $e['status'] : 'sent') : 'received', 'filename' => mb_substr($e['filename'] ?? '', 0, 150) ?: null,
             'mime' => mb_substr($e['mime'] ?? '', 0, 100) ?: null, 'message_at' => $at]);
         $changes = [];
         if (empty($e['fromMe']) && ! empty($e['name']) && $conversation->name === $conversation->phone) {

@@ -159,7 +159,7 @@
       if (label !== previousDay) { log.append(el('div', 'inbox-day', label)); previousDay = label; }
       const bubble = el('article', 'inbox-message ' + message.direction);
       if (message.direction === 'note') bubble.append(el('small', '', 'NOTA INTERNA · ' + (state.staff.find(u => u.id === message.user_id)?.name || 'Equipe')));
-      if (message.body) bubble.append(el('p', '', message.body));
+      if (message.body) { const body = el('div', 'inbox-message-body'); if (window.WhatsAppFormat) window.WhatsAppFormat.append(body, message.body); else body.textContent = message.body; bubble.append(body); }
       if (message.kind !== 'text') {
         const link = el('a', '', ({ image: '▧ Imagem', video: '▷ Vídeo', audio: '♫ Áudio', sticker: '▧ Figurinha', document: '▤ Arquivo' }[message.kind] || 'Arquivo') + (message.filename ? ' · ' + message.filename : '') + ' ↓');
         link.href = base + '/media/' + message.id; link.target = '_blank'; link.rel = 'noopener'; bubble.append(link);
@@ -172,7 +172,8 @@
       }
       if (message.error) bubble.append(el('div', 'inbox-message-error', message.error));
       if (message.status === 'failed' && writable) { const retry = el('button', '', 'Tentar novamente'); retry.type = 'button'; retry.onclick = () => retryMessage(message); bubble.append(retry); }
-      const footer = el('footer'); const status = el('span', message.status === 'read' ? 'read' : '', delivery[message.status] || message.status); status.title = ({ sent: 'Enviada', delivered: 'Entregue', read: 'Lida' })[message.status] || message.status;
+      const footer = el('footer'); const status = el('span', 'inbox-receipt ' + (message.status === 'read' ? 'read' : ''), delivery[message.status] ?? message.status); status.title = message.direction === 'in' && message.status === 'read' ? 'Leitura enviada ao WhatsApp' : ({ sent: 'Enviada', delivered: 'Entregue', read: 'Lida pelo cliente', pending: 'Aguardando envio', sending: 'Enviando', received: 'Recebida' })[message.status] || message.status;
+      status.setAttribute('aria-label', status.title);
       footer.append(el('time', '', time(message.message_at)), status); bubble.append(footer); log.append(bubble);
     }
     if (atBottom || forceBottom || oldHeight === 0) log.scrollTop = log.scrollHeight;
@@ -191,7 +192,7 @@
     if (!writable || !state.selected?.unread || readBusy || document.hidden) return;
     readBusy = true;
     const chatId = state.selected.id;
-    try { await api(`/conversations/${chatId}/read`); if (state.selected?.id === chatId) state.selected.unread = 0; const chat = state.conversations.find(c => c.id === chatId); if (chat) chat.unread = 0; renderList(); }
+    try { const result = await api(`/conversations/${chatId}/read`); if (state.selected?.id === chatId) { state.selected.unread = 0; const ids = new Set(result.ids || []); messages.forEach(m => { if (m.direction === 'in' && ids.has(m.remote_id)) m.status = 'read'; }); renderMessages(); } const chat = state.conversations.find(c => c.id === chatId); if (chat) chat.unread = 0; renderList(); }
     catch { /* Local unread status will be retried on the next refresh. */ }
     finally { readBusy = false; }
   }
@@ -242,11 +243,27 @@
     try { const result = await api('/conversations', { name: form.elements.name.value, phone: form.elements.phone.value }); $('inbox-new-dialog').close(); form.reset(); alert(''); openChat(result.id); } catch (error) { alert(error.message); } };
   function renderReplies() {
     const list = $('inbox-replies-list'); list.replaceChildren();
-    if (!state.replies.length) list.append(el('p', '', 'Crie sua primeira resposta rápida abaixo.'));
-    state.replies.forEach(reply => { const row = el('div', 'inbox-reply-item'); const use = el('button', '', reply.title); use.type = 'button'; use.onclick = () => { $('inbox-body').value = reply.body; $('inbox-composer').dataset.key = uuid(); storeDraft(); $('inbox-replies-dialog').close(); $('inbox-body').focus(); };
-      const remove = el('button', '', '×'); remove.type = 'button'; remove.setAttribute('aria-label', 'Excluir resposta ' + reply.title); remove.onclick = () => action('/replies/' + reply.id + '/delete', {}, () => { state.replies = state.replies.filter(r => r.id !== reply.id); renderReplies(); }); row.append(use, remove); list.append(row); });
+    const q = $('inbox-replies-search').value.trim().toLocaleLowerCase('pt-BR');
+    const replies = state.replies.filter(reply => (reply.title + ' ' + reply.body).toLocaleLowerCase('pt-BR').includes(q));
+    $('inbox-replies-count').textContent = state.replies.length;
+    if (!replies.length) list.append(el('div', 'inbox-replies-empty', q ? 'Nenhum modelo encontrado. Tente outra palavra.' : 'Suas melhores respostas, sempre à mão. Crie seu primeiro modelo abaixo.'));
+    replies.forEach(reply => { const row = el('article', 'inbox-reply-card'); const header = el('div', 'inbox-reply-card-header'); header.append(el('span', 'inbox-reply-symbol', 'ϟ'), el('strong', '', reply.title));
+      const preview = el('div', 'inbox-reply-preview'); if (window.WhatsAppFormat) window.WhatsAppFormat.append(preview, reply.body); else preview.textContent = reply.body;
+      const actions = el('div', 'inbox-reply-actions'); const use = el('button', '', 'Inserir mensagem ↗'); use.type = 'button'; use.onclick = () => { $('inbox-body').value = reply.body; $('inbox-composer').dataset.key = uuid(); storeDraft(); $('inbox-replies-dialog').close(); $('inbox-body').focus(); };
+      const remove = el('button', 'inbox-reply-delete', 'Excluir'); remove.type = 'button'; remove.setAttribute('aria-label', 'Excluir resposta ' + reply.title); remove.onclick = () => action('/replies/' + reply.id + '/delete', {}, () => { state.replies = state.replies.filter(r => r.id !== reply.id); renderReplies(); }); actions.append(remove, use); row.append(header, preview, actions); list.append(row); });
   }
-  $('inbox-replies-open').onclick = () => { if (!selected) return; renderReplies(); $('inbox-replies-dialog').showModal(); };
+  $('inbox-replies-open').onclick = () => { if (!selected) return; $('inbox-replies-search').value = ''; renderReplies(); $('inbox-replies-dialog').showModal(); $('inbox-replies-search').focus(); };
+  $('inbox-replies-search').oninput = renderReplies;
+  document.querySelectorAll('[data-format]').forEach(button => { button.disabled = !writable; button.onclick = () => {
+    if (!writable || sending) return;
+    const input = $('inbox-body'), start = input.selectionStart, end = input.selectionEnd;
+    const text = input.value.slice(start, end) || 'texto', type = button.dataset.format;
+    const marker = { bold: '*', italic: '_', strike: '~', code: '`' }[type];
+    const replacement = marker ? marker + text + marker : text.split('\n').map((line, i) => (type === 'bullet' ? '- ' : type === 'number' ? `${i + 1}. ` : '> ') + line).join('\n');
+    const prefix = !marker && start > 0 && input.value[start - 1] !== '\n' ? '\n' : '';
+    if (input.value.length - (end - start) + prefix.length + replacement.length > 7800) return;
+    input.setRangeText(prefix + replacement, start, end, 'select'); input.oninput(); input.focus();
+  }; });
   $('inbox-reply-form').onsubmit = async event => { event.preventDefault(); const form = event.currentTarget; const data = { title: form.elements.title.value, body: form.elements.body.value };
     try { const result = await api('/replies', data); state.replies.push({ id: result.id, ...data }); form.reset(); renderReplies(); } catch (error) { alert(error.message); } };
   $('inbox-chat-search-toggle').onclick = () => { $('inbox-history-search').hidden = !$('inbox-history-search').hidden; if (!$('inbox-history-search').hidden) $('inbox-history-query').focus(); };

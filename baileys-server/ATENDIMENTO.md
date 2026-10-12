@@ -21,6 +21,12 @@ Para anexos de até 8 MB, configure PHP com `upload_max_filesize=8M` e `post_max
 
 ## Atendimento
 
+A central ocupa toda a janela, sem sidebar, cabeçalho ou rodapé do CRM. O botão de voltar no painel de conversas retorna ao CRM. Somente o histórico, a lista e a ficha lateral têm rolagem quando necessário.
+
+As respostas externas recebem automaticamente `*Nome do atendente:*` e duas quebras de linha antes da mensagem; o nome vem do usuário autenticado e não é repetido em tentativas do mesmo envio. Notas internas continuam sem assinatura externa. A tela interpreta negrito, itálico, riscado, código, monoespaçado, listas e citações, e oferece botões para inserir essas marcações no editor. Os modelos de respostas rápidas têm busca e prévia formatada.
+
+Um tique cinza indica enviada, dois cinza entregue e dois azuis lida pelo cliente. Mensagens recebidas mostram a leitura depois que o serviço aceita a solicitação de marcar como lida. Os indicadores dependem dos recibos disponibilizados pelo WhatsApp e das configurações de privacidade do contato; não é possível inferir uma leitura que não foi confirmada. A sincronização permanece a cada 30 segundos enquanto a aba está visível.
+
 - Lista de até 100 conversas recentes por filtro, busca por nome/telefone, filtro de status, não lidas, responsável atual e tag.
 - Histórico paginado, busca no texto e atualização automática a cada 30 segundos enquanto a aba está visível. Cada empresa tem cursor e trava de sincronização para evitar importações duplicadas.
 - Envio de texto, imagens, PDF, texto, áudio e vídeo até 8 MB. Imagens são enviadas como imagem; os demais anexos como documento. Áudios, vídeos e imagens recebidos podem ser abertos no próprio chat. Arquivos expirados no WhatsApp podem não estar disponíveis para download.

@@ -19,6 +19,7 @@ console.log('Sintaxe PHP e JavaScript válida.');
 if (process.argv.includes('--test')) {
   run(process.execPath, ['scripts/whatsapp-poll.test.cjs']);
   run(process.execPath, ['scripts/whatsapp-inbox.test.cjs']);
+  run(process.execPath, ['scripts/whatsapp-format.test.cjs']);
   const result = spawnSync(php, ['artisan', 'test', '--compact', '--no-ansi'], { stdio: 'inherit', windowsHide: true });
   process.exit(result.status ?? 1);
 }

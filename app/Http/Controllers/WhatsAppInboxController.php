@@ -154,21 +154,23 @@ class WhatsAppInboxController extends Controller
     {
         $this->access(true);
         $chat = $this->t->find('whatsapp_conversations', $id);
-        // Clear only the unread count observed, preserving messages arriving concurrently.
-        $this->t->query('whatsapp_conversations')->where('id', $id)->where('unread', '>=', $chat->unread)->decrement('unread', $chat->unread);
         try {
-            $this->wa->api($this->t->id(), $chat->connection_id, '/chat-read', ['jid' => $chat->jid]);
-        } catch (\Throwable) {
+            $result = $this->wa->api($this->t->id(), $chat->connection_id, '/chat-read', ['jid' => $chat->jid]);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => WhatsApp::connectionError($e)], 503);
         }
+        $this->t->query('whatsapp_conversations')->where('id', $id)->where('unread', '>=', $chat->unread)->decrement('unread', $chat->unread);
+        $ids = array_slice($result['ids'] ?? [], 0, 100);
+        $this->t->query('whatsapp_chat_messages')->where('conversation_id', $id)->where('direction', 'in')->whereIn('remote_id', $ids)->update(['status' => 'read', 'updated_at' => now()]);
 
-        return response()->json(['ok' => true]);
+        return response()->json(['ok' => true, 'ids' => $ids]);
     }
 
     public function send(Request $r, int $id)
     {
         $this->access(true);
         $chat = $this->t->find('whatsapp_conversations', $id);
-        $d = $r->validate(['body' => 'nullable|string|max:8000', 'request_key' => 'required|uuid', 'note' => 'nullable|boolean',
+        $d = $r->validate(['body' => 'nullable|string|max:7800', 'request_key' => 'required|uuid', 'note' => 'nullable|boolean',
             'file' => 'nullable|file|max:8192|mimetypes:image/jpeg,image/png,image/webp,application/pdf,text/plain,audio/mpeg,audio/ogg,audio/mp4,video/mp4']);
         if (! trim($d['body'] ?? '') && ! $r->hasFile('file')) {
             throw ValidationException::withMessages(['body' => 'Escreva uma mensagem ou selecione um arquivo.']);
@@ -187,8 +189,10 @@ class WhatsAppInboxController extends Controller
             }
             $file = $r->file('file');
             $path = $file?->store('whatsapp/'.$this->t->id(), 'local');
+            $name = mb_substr(trim(preg_replace('/[\r\n*_~`]+/u', ' ', auth()->user()->name)), 0, 80) ?: 'Atendimento';
+            $body = $note ? ($d['body'] ?? '') : '*'.$name.":*\n\n".($d['body'] ?? '');
             $mid = $this->t->insert('whatsapp_chat_messages', ['conversation_id' => $chat->id, 'request_key' => $d['request_key'], 'direction' => $note ? 'note' : 'out',
-                'kind' => $file ? (str_starts_with($file->getMimeType(), 'image/') ? 'image' : 'document') : 'text', 'body' => $d['body'] ?? '', 'status' => $note ? 'internal' : 'pending',
+                'kind' => $file ? (str_starts_with($file->getMimeType(), 'image/') ? 'image' : 'document') : 'text', 'body' => $body, 'status' => $note ? 'internal' : 'pending',
                 'filename' => $file ? mb_substr(basename($file->getClientOriginalName()), 0, 150) : null, 'mime' => $file?->getMimeType(), 'media_path' => $path,
                 'user_id' => auth()->id(), 'message_at' => now()]);
 
@@ -213,7 +217,9 @@ class WhatsAppInboxController extends Controller
                 if (! empty($result['id'])) {
                     $this->t->query('whatsapp_chat_messages')->where('conversation_id', $chat->id)->where('remote_id', $result['id'])->where('id', '!=', $message->id)->delete();
                 }
-                $this->t->update('whatsapp_chat_messages', $message->id, ['remote_id' => $result['id'] ?? null, 'status' => $sent ? 'sent' : 'unknown', 'error' => $sent ? null : 'Sem confirmação. Confira no celular antes de enviar novamente.']);
+                $current = $this->t->find('whatsapp_chat_messages', $message->id);
+                $status = in_array($current->status, ['delivered', 'read']) ? $current->status : ($sent ? 'sent' : 'unknown');
+                $this->t->update('whatsapp_chat_messages', $message->id, ['remote_id' => $result['id'] ?? $current->remote_id, 'status' => $status, 'error' => $sent ? null : 'Sem confirmação. Confira no celular antes de enviar novamente.']);
                 $this->t->update('whatsapp_conversations', $chat->id, ['last_body' => mb_substr($message->body ?: '[Arquivo]', 0, 250), 'last_message_at' => $message->message_at]);
             });
         } catch (\Throwable $e) {

@@ -70,3 +70,16 @@ test('LID-addressed messages use the phone alias for chat identity and receive e
   socket.ev.emit('messages.delete', { keys: [message.key] }); await inbox.queues.get('1-1');
   feed = await inbox.feed('1-1', 0); assert.equal(feed.events.at(-1).type, 'deleted');
 });
+test('recipient receipts advance to delivered/read and incoming read requests use chronological keys', async () => {
+  const inbox = fixture(); const socket = { ev: new EventEmitter(), readMessages: async keys => { socket.readKeys = keys; } };
+  inbox.bind('1-1', socket, () => true);
+  const outgoing = raw('out', { key: { id: 'out', remoteJid: '5511999999999@s.whatsapp.net', fromMe: true } });
+  await inbox.capture('1-1', [outgoing, raw('latest', { messageTimestamp: 200 }), raw('old', { messageTimestamp: 100 })]);
+  socket.ev.emit('message-receipt.update', [{ key: outgoing.key, receipt: { receiptTimestamp: 300 } }]); await inbox.queues.get('1-1');
+  assert.equal((await inbox.feed('1-1', 0)).events.at(-1).status, 'delivered');
+  socket.ev.emit('message-receipt.update', [{ key: outgoing.key, receipt: { readTimestamp: 400 } }]); await inbox.queues.get('1-1');
+  assert.equal((await inbox.feed('1-1', 0)).events.at(-1).status, 'read');
+  const result = await inbox.read('1-1', socket, '5511999999999@s.whatsapp.net');
+  assert.deepEqual(result.ids, ['old', 'latest']);
+  assert.deepEqual(socket.readKeys.map(k => k.id), ['old', 'latest']);
+});
