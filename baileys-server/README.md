@@ -4,6 +4,8 @@ Copie **somente esta pasta** para o servidor de WhatsApp. Ela não depende de PH
 
 O menu para criar bots e escanear QR code permanece no CRM. O CRM chama a API deste serviço; o navegador não recebe o token de acesso. Este pacote é o serviço de conexão, sem painel web próprio.
 
+O CRM permite um bot por empresa. O servidor continua atendendo várias empresas, cada uma com suas próprias credenciais. Depois de criar o bot, a tela oferece conexão, pausa da automação, alteração do nome e recuperação por novo QR code.
+
 ## Instalar e iniciar
 
 Dentro desta pasta, execute:
@@ -85,11 +87,14 @@ Todas as rotas exigem `Authorization: Bearer <WHATSAPP_SERVICE_TOKEN>`:
 | GET | `/sessions/{empresa}/{bot}` | Consultar status, telefone e QR code PNG em data URL |
 | POST | `/sessions/{empresa}/{bot}/connect` | Criar/restaurar conexão e gerar QR code |
 | POST | `/sessions/{empresa}/{bot}/disconnect` | Encerrar sessão |
+| POST | `/sessions/{empresa}/{bot}/reconnect` | Encerrar a sessão anterior e gerar um novo QR code |
 | POST | `/sessions/{empresa}/{bot}/messages` | Enviar `{ "id": "123", "phone": "5511999999999", "text": "Comprovante..." }` |
 
 Empresa, bot e mensagem devem ter IDs numéricos positivos. O CRM controla a autorização de cada empresa. O token dá acesso administrativo a todas as sessões do serviço; use um serviço separado para cada instalação independente de CRM.
 
 O serviço reconecta sessões após reinício. Logout pelo celular exige novo QR code. Envios com confirmação incerta ficam em `unknown` e não são repetidos automaticamente. Preserve `messages.enc` para manter a proteção contra duplicidade.
+
+Para trocar o número ou recuperar uma sessão, use “Trocar número ou recuperar conexão → Gerar novo QR code” no CRM. A reconexão encerra o socket anterior e impede que eventos antigos restaurem credenciais descartadas. Preserve `.env` e `data/` ao atualizar o serviço; reinicie o processo depois de enviar os arquivos novos.
 
 A trava `data/.service-lock` é renovada enquanto o processo está ativo. Após uma parada abrupta, a próxima inicialização recupera automaticamente uma trava sem atualização há 30 segundos; a inicialização pode aguardar até 35 segundos. Uma segunda instância ativa é bloqueada. Pare a versão antiga antes de atualizar, pois ela não renova a trava.
 

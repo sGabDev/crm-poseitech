@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SendWhatsAppReceipt;
 use App\Models\Company;
 use App\Models\Plan;
 use App\Models\User;
@@ -9,10 +10,13 @@ use App\Services\CashFlow;
 use App\Services\Commerce;
 use App\Services\CompanySmtp;
 use App\Services\Tenant;
+use App\Services\WhatsApp;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Mail\Mailer;
 use Illuminate\Mail\Transport\ArrayTransport;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
@@ -56,18 +60,33 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_company_can_create_only_one_bot_and_manage_its_name(): void
+    {
+        $this->post('/whatsapp', ['name' => 'Meu WhatsApp'])->assertRedirect('/whatsapp');
+        $bot = app(Tenant::class)->query('whatsapp_connections')->first();
+        $this->assertTrue((bool) $bot->automatic);
+        $this->from('/whatsapp')->post('/whatsapp', ['name' => 'Segundo'])->assertSessionHasErrors('name');
+        $this->assertDatabaseCount('whatsapp_connections', 1);
+        $this->post('/whatsapp/'.$bot->id.'/name', ['name' => 'Atendimento'])->assertRedirect('/whatsapp');
+        $this->get('/whatsapp')->assertOk()->assertSee('Atendimento')->assertSee('Gerar novo QR code')->assertDontSee('Criar meu bot');
+        config(['whatsapp.token' => str_repeat('a', 32)]);
+        Http::fake(['*' => Http::response(['status' => 'connecting'])]);
+        $this->post('/whatsapp/'.$bot->id, ['action' => 'reconnect'])->assertRedirect('/whatsapp');
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/reconnect'));
+    }
+
     public function test_whatsapp_buttons_redirect_to_html_and_receipts_send_without_scheduler(): void
     {
         Http::fake(['*' => Http::response(['status' => 'sent'])]);
-        \Illuminate\Support\Facades\Bus::fake([\App\Jobs\SendWhatsAppReceipt::class]);
+        Bus::fake([SendWhatsAppReceipt::class]);
         config(['whatsapp.token' => str_repeat('a', 32)]);
         $t = app(Tenant::class);
         $bot = $t->insert('whatsapp_connections', ['name' => 'Vendas', 'automatic' => true]);
         $t->update('customers', $this->customer, ['phone' => '11999999999']);
         $this->post('/sales', $this->sale())->assertRedirect();
-        \Illuminate\Support\Facades\Bus::assertDispatchedAfterResponse(\App\Jobs\SendWhatsAppReceipt::class);
+        Bus::assertDispatchedAfterResponse(SendWhatsAppReceipt::class);
         $message = $t->query('whatsapp_messages')->first();
-        (new \App\Jobs\SendWhatsAppReceipt($this->company->id, $message->id))->handle();
+        (new SendWhatsAppReceipt($this->company->id, $message->id))->handle();
         $this->assertDatabaseHas('whatsapp_messages', ['id' => $message->id, 'status' => 'sent']);
         $this->get('/whatsapp/'.$bot.'/status')->assertRedirect('/whatsapp');
         $this->withSession(['_previous' => ['url' => url('/whatsapp/'.$bot.'/status')]])
@@ -84,8 +103,8 @@ class CommerceTest extends TestCase
         $this->getJson('/whatsapp/'.$id.'/status')->assertStatus(503)
             ->assertJsonPath('status', 'unavailable')->assertSee('Token recusado')->assertDontSee('private-token-do-not-expose');
         $this->getJson('/whatsapp/'.$id.'/status')->assertStatus(503)->assertSee('URL');
-        $error = new \Illuminate\Http\Client\ConnectionException('cURL error 7: Failed to connect');
-        $this->assertStringContainsString('0.0.0.0', \App\Services\WhatsApp::connectionError($error));
+        $error = new ConnectionException('cURL error 7: Failed to connect');
+        $this->assertStringContainsString('0.0.0.0', WhatsApp::connectionError($error));
     }
 
     public function test_whatsapp_receipts_are_tenant_scoped_and_idempotent(): void

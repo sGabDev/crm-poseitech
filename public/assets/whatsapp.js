@@ -31,6 +31,12 @@
       const data = await response.json();
       if (data.retry_after || response.status === 429) { stopped = true; active.clear(); }
       card.dataset.connectionState = data.status || 'unavailable';
+      const connectButton = card.querySelector('[data-connect-button]');
+      if (connectButton) connectButton.disabled = data.status === 'connected';
+      const title = card.querySelector('[data-connection-title]');
+      if (title) title.textContent = data.status === 'connected' ? 'Tudo pronto para enviar.' : data.status === 'qr' ? 'Escaneie para conectar.' : 'Conecte o WhatsApp da empresa.';
+      const qrNote = card.querySelector('[data-qr-note]');
+      if (qrNote) qrNote.textContent = data.status === 'connected' ? 'Seu WhatsApp está conectado.' : 'O QR code aparece aqui ao iniciar uma conexão.';
       state.textContent = (labels[data.status] || labels.unavailable) + (data.phone ? ' · ' + data.phone : '');
       hint.textContent = data.message || (data.status === 'connected' ? 'Pronto para enviar. As consultas automáticas foram encerradas.' : 'O QR code é atualizado por até 2 minutos. Você pode verificar novamente quando precisar.');
       const validQR = typeof data.qr === 'string' && /^data:image\/png;base64,/.test(data.qr);

@@ -10,6 +10,7 @@ use App\Http\Controllers\CouponController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ResourceController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\WhatsAppController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect(auth()->check() ? '/dashboard' : '/login'));
@@ -43,11 +44,12 @@ Route::middleware(['auth', 'can:platform'])->group(function () {
     Route::post('/admin/settings', [AdminController::class, 'settings']);
 });
 Route::middleware(['auth', 'company'])->group(function () {
-    Route::get('/whatsapp', [\App\Http\Controllers\WhatsAppController::class, 'index']);
-    Route::post('/whatsapp', [\App\Http\Controllers\WhatsAppController::class, 'create'])->middleware('throttle:10,1');
-    Route::get('/whatsapp/{id}/status', [\App\Http\Controllers\WhatsAppController::class, 'status'])->whereNumber('id');
-    Route::post('/whatsapp/{id}', [\App\Http\Controllers\WhatsAppController::class, 'action'])->whereNumber('id')->middleware('throttle:20,1');
-    Route::post('/sales/{id}/whatsapp', [\App\Http\Controllers\WhatsAppController::class, 'receipt'])->whereNumber('id')->middleware('throttle:5,1');
+    Route::get('/whatsapp', [WhatsAppController::class, 'index']);
+    Route::post('/whatsapp/{id}/name', [WhatsAppController::class, 'rename'])->whereNumber('id')->middleware('throttle:10,1');
+    Route::post('/whatsapp', [WhatsAppController::class, 'create'])->middleware('throttle:10,1');
+    Route::get('/whatsapp/{id}/status', [WhatsAppController::class, 'status'])->whereNumber('id');
+    Route::post('/whatsapp/{id}', [WhatsAppController::class, 'action'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::post('/sales/{id}/whatsapp', [WhatsAppController::class, 'receipt'])->whereNumber('id')->middleware('throttle:5,1');
     Route::post('/customer-deposits', [AccountOperationsController::class, 'deposit']);
     Route::get('/cash-flow', [AccountOperationsController::class, 'flow']);
     Route::post('/cash-flow/categories', [AccountOperationsController::class, 'categories']);

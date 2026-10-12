@@ -9,7 +9,7 @@ No CRM, configure `WHATSAPP_SERVICE_URL` com a URL HTTPS do servidor remoto e `W
 As instruções abaixo também mantêm a opção local de desenvolvimento.
 
 
-O menu **WhatsApp · Bots**, disponível ao administrador da empresa, permite criar até 10 bots, gerar QR code, acompanhar a conexão, desconectar e escolher um bot para comprovantes automáticos. Uma empresa não acessa os bots nem os comprovantes de outra. O envio por e-mail continua pela fila SMTP existente. Configure o telefone do cliente com DDD (Brasil) ou código internacional completo.
+O menu **WhatsApp · Bots**, disponível ao administrador da empresa, permite criar um bot por empresa, gerar QR code, acompanhar a conexão, desconectar e escolher um bot para comprovantes automáticos. Uma empresa não acessa os bots nem os comprovantes de outra. O envio por e-mail continua pela fila SMTP existente. Configure o telefone do cliente com DDD (Brasil) ou código internacional completo.
 
 ## Instalação
 

@@ -7,6 +7,7 @@ use App\Services\WhatsApp;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class WhatsAppController extends Controller
 {
@@ -16,7 +17,7 @@ class WhatsAppController extends Controller
     {
         Gate::authorize('manage-company');
 
-        return view('whatsapp', ['connections' => $this->t->query('whatsapp_connections')->get(), 'messages' => $this->t->query('whatsapp_messages')->orderByDesc('id')->paginate(20)]);
+        return view('whatsapp', ['connections' => $this->t->query('whatsapp_connections')->orderByDesc('automatic')->orderBy('id')->limit(1)->get(), 'messages' => $this->t->query('whatsapp_messages')->orderByDesc('id')->paginate(20)]);
     }
 
     public function create(Request $r)
@@ -25,9 +26,11 @@ class WhatsAppController extends Controller
         $d = $r->validate(['name' => 'required|string|max:80']);
         $id = DB::transaction(function () use ($d) {
             $this->t->lock();
-            abort_if($this->t->query('whatsapp_connections')->count() >= 10, 422, 'Limite de 10 bots por empresa.');
+            if ($this->t->query('whatsapp_connections')->exists()) {
+                throw ValidationException::withMessages(['name' => 'Sua empresa já possui um bot. Use os controles de conexão ou altere o nome do bot existente.']);
+            }
 
-            return $this->t->insert('whatsapp_connections', $d);
+            return $this->t->insert('whatsapp_connections', $d + ['automatic' => true]);
         });
         $this->t->audit('whatsapp.created', 'whatsapp_connections', $id);
 
@@ -52,7 +55,7 @@ class WhatsAppController extends Controller
     {
         Gate::authorize('manage-company');
         $this->t->find('whatsapp_connections', $id);
-        $action = $r->validate(['action' => 'required|in:connect,disconnect,automatic,disable'])['action'];
+        $action = $r->validate(['action' => 'required|in:connect,reconnect,disconnect,automatic,disable'])['action'];
         if (in_array($action, ['automatic', 'disable'])) {
             DB::transaction(function () use ($id, $action) {
                 $this->t->lock();
@@ -84,5 +87,16 @@ class WhatsAppController extends Controller
         }
 
         return redirect('/sales/'.$id)->with('success', $result->status === 'sent' ? 'Comprovante enviado pelo WhatsApp.' : 'Comprovante em processamento.');
+    }
+
+    public function rename(Request $request, int $id)
+    {
+        Gate::authorize('manage-company');
+        $this->t->find('whatsapp_connections', $id);
+        $data = $request->validate(['name' => 'required|string|max:80']);
+        $this->t->update('whatsapp_connections', $id, $data);
+        $this->t->audit('whatsapp.renamed', 'whatsapp_connections', $id);
+
+        return redirect('/whatsapp')->with('success', 'Nome do bot atualizado.');
     }
 }
