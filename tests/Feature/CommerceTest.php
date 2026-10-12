@@ -60,6 +60,19 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_completed_sale_can_start_a_fresh_sale_without_reusing_items_or_request_key(): void
+    {
+        $data = $this->sale();
+        $this->post('/sales', $data)->assertSessionHasNoErrors()->assertRedirect();
+        $id = DB::table('sales')->value('id');
+        $this->get('/sales/'.$id)->assertOk()->assertSee('Venda concluída')->assertSee('Fazer nova venda');
+        $response = $this->get('/sales/new')->assertOk()->assertSee('Nova venda');
+        $response->assertDontSee('value="'.$data['request_key'].'"', false);
+        $response->assertSee('name="items[0][quantity]"', false);
+        $this->assertDatabaseCount('sales', 1);
+        $this->get('/sales/'.$id)->assertOk()->assertDontSee('Venda concluída')->assertSee('+ Nova venda');
+    }
+
     public function test_company_can_create_only_one_bot_and_manage_its_name(): void
     {
         $this->post('/whatsapp', ['name' => 'Meu WhatsApp'])->assertRedirect('/whatsapp');

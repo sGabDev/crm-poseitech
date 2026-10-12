@@ -1,0 +1,61 @@
+/* Shared CRM shell. The immersive inbox keeps its own layout and styles. */
+body:not(.inbox-page){--bg:#f7f8fa;--ink:#202a35;--muted:#647080;--line:#e5e9ee;--primary:#176b55;--radius:10px;font:14px/1.6 'Segoe UI',Arial,sans-serif}
+body:not(.inbox-page) .sidebar{width:236px;background:#fff;color:var(--ink);border-right:1px solid var(--line)}
+body:not(.inbox-page) .brand{color:var(--ink);padding:22px 20px;font-size:21px}
+body:not(.inbox-page) .brand small{color:var(--muted);letter-spacing:1px}
+body:not(.inbox-page) .brand-mark{background:var(--primary);color:#fff;border-radius:9px;box-shadow:none}
+body:not(.inbox-page) .workspace{margin:0 12px 14px;padding:12px;background:#f7f8fa;border:1px solid var(--line);border-radius:8px}
+body:not(.inbox-page) .workspace strong{color:var(--ink);font-size:13px}
+body:not(.inbox-page) .workspace small,body:not(.inbox-page) .sidebar-bottom small{color:var(--muted)}
+body:not(.inbox-page) .avatar{background:#eaf3ef;color:var(--primary);border-radius:8px}
+body:not(.inbox-page) .sidebar nav{padding:0 12px 16px}
+body:not(.inbox-page) .sidebar nav>a{color:#4c5968;padding:9px 12px;font-size:13px;border-radius:7px;margin-bottom:2px;min-height:39px}
+body:not(.inbox-page) .sidebar nav>a:hover{background:#f4f6f8;color:var(--ink)}
+body:not(.inbox-page) .sidebar nav>a.active{background:#eaf3ef;color:var(--primary);font-weight:650;box-shadow:none}
+body:not(.inbox-page) .nav-label{color:#6a7683;font-size:11px;letter-spacing:0;text-transform:none;padding:17px 12px 7px;font-weight:600}
+body:not(.inbox-page) .nav-symbol{font-size:16px;width:18px}
+body:not(.inbox-page) .sidebar-bottom{border-top:1px solid var(--line);background:#fff;color:var(--ink);padding:14px 16px}
+body:not(.inbox-page) .sidebar-bottom .icon-button{color:var(--muted)}
+body:not(.inbox-page) .app{margin-left:236px}
+body:not(.inbox-page) .topbar{height:64px;padding:0 30px;background:#fff;backdrop-filter:none;gap:18px}
+body:not(.inbox-page) .breadcrumb{font-size:13px;color:var(--ink);font-weight:600}
+body:not(.inbox-page) .global-search{background:#f7f8fa;border:1px solid var(--line);border-radius:7px;width:340px}
+body:not(.inbox-page) .global-search input{font-size:12px}
+body:not(.inbox-page) .global-search kbd{display:none}
+body:not(.inbox-page) .app>main{padding:28px 30px 40px;max-width:1480px;min-height:calc(100dvh - 64px)}
+body:not(.inbox-page) .app>footer{display:none}
+body:not(.inbox-page) h1{font-size:27px;letter-spacing:-.6px;font-weight:650}
+body:not(.inbox-page) h2{font-size:16px;letter-spacing:-.2px}
+body:not(.inbox-page) .page-heading{margin-bottom:24px;gap:16px}
+body:not(.inbox-page) .page-heading p,body:not(.inbox-page) .section-heading p{font-size:13px;line-height:1.6}
+body:not(.inbox-page) .card{padding:22px;border-radius:10px;box-shadow:none;margin-bottom:20px}
+body:not(.inbox-page) .kpi-grid{gap:14px;margin-bottom:22px}
+body:not(.inbox-page) .kpi{padding:20px;border-radius:10px;box-shadow:none;gap:9px}
+body:not(.inbox-page) .kpi>span{font-size:13px;color:var(--muted)}
+body:not(.inbox-page) .kpi strong{font-size:27px;letter-spacing:-.7px;overflow-wrap:anywhere}
+body:not(.inbox-page) .kpi.featured{background:#edf5f1;border-color:#d9e8e0}
+body:not(.inbox-page) .kpi small,body:not(.inbox-page) .kpi a{font-size:12px}
+body:not(.inbox-page) button,body:not(.inbox-page) .button{border-radius:7px;box-shadow:none;min-height:40px;font-size:13px}
+body:not(.inbox-page) .secondary{background:#fff;border-color:#dbe1e7;color:#344150}
+body:not(.inbox-page) label{font-size:13px;gap:6px}
+body:not(.inbox-page) input,body:not(.inbox-page) select,body:not(.inbox-page) textarea{border-color:#dbe1e7;border-radius:7px;font-size:14px}
+body:not(.inbox-page) :is(a,button,input,select,textarea,summary):focus-visible{outline:2px solid #278568;outline-offset:3px}
+body:not(.inbox-page) .filters{background:#f8f9fb;border:1px solid var(--line);border-radius:8px;padding:16px;gap:12px}
+body:not(.inbox-page) table{font-size:13px}
+body:not(.inbox-page) th{background:#f8f9fb;color:#5c6877;font-size:12px;text-transform:none;letter-spacing:0;font-weight:600;padding:12px 14px}
+body:not(.inbox-page) td{padding:14px;line-height:1.6}
+body:not(.inbox-page) tbody tr:hover{background:#fafbfc}
+body:not(.inbox-page) .badge{font-size:12px;padding:3px 8px;border-radius:5px}
+body:not(.inbox-page) .metric-row{font-size:13px;border-color:var(--line)}
+body:not(.inbox-page) .notice{border-radius:8px;box-shadow:none;font-size:13px}
+body:not(.inbox-page) .wa-bot{padding:0}
+.sale-completed{display:flex;align-items:center;gap:16px;padding:20px;margin:0 0 22px;background:#edf6f1;border:1px solid #cee4d7;border-radius:10px}
+.sale-completed h2{margin:0 0 3px}.sale-completed p{margin:0;color:#456354;font-size:13px}.sale-completed .button{margin-left:auto;flex-shrink:0}
+.completion-icon{display:grid;place-items:center;width:36px;height:36px;background:#d6ebdf;color:#176b55;border-radius:50%;font-size:20px;flex-shrink:0}
+.nav-backdrop{display:none}
+@media(min-width:801px){body:not(.inbox-page) .sidebar{transform:none}body:not(.inbox-page) .menu-toggle{display:none}}
+@media(max-width:1100px){body:not(.inbox-page) .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:800px){body:not(.inbox-page) .sidebar{transform:translateX(-100%);transition:transform .18s ease;width:236px}body:not(.inbox-page) .sidebar.open{transform:translateX(0)}body:not(.inbox-page) .app{margin-left:0}body:not(.inbox-page) .menu-toggle{display:inline-flex}body:not(.inbox-page) .topbar{padding:0 18px;gap:12px}body:not(.inbox-page) .app>main{padding:22px 18px 32px}body:not(.inbox-page) .today{display:none}body:not(.inbox-page) .global-search{width:260px}.nav-backdrop:not([hidden]){display:block;position:fixed;inset:0;z-index:29;background:#17212d66;border:0;border-radius:0;padding:0}.sale-completed{flex-wrap:wrap}.sale-completed .button{margin-left:52px}}
+@media(max-width:520px){body:not(.inbox-page) .breadcrumb{display:none}body:not(.inbox-page) .global-search{width:auto;flex:1}body:not(.inbox-page) .card{padding:17px}body:not(.inbox-page) .kpi{padding:16px}body:not(.inbox-page) .kpi strong{font-size:23px}.page-heading .actions{width:100%}.sale-completed .button{width:100%;margin-left:0}body:not(.inbox-page) .filters label{flex:1 1 140px}}
+@media(prefers-reduced-motion:reduce){body:not(.inbox-page) .sidebar{transition:none}}
+@media print{.nav-backdrop,.sale-completed .button{display:none!important}body:not(.inbox-page) .app{margin-left:0}body:not(.inbox-page) .app>main{padding:0;min-height:0}}

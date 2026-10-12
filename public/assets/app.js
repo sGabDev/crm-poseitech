@@ -19,7 +19,14 @@ document.querySelectorAll('[data-phone]').forEach(input=>{
  const format=()=>{const raw=input.value;let digits=raw.replace(/\D/g,'');if(!digits)return;if(!raw.startsWith('+'))digits='55'+digits;if(!digits.startsWith('55')){input.value='+'+digits.slice(0,15);return;}const local=digits.slice(2,13);let value='+55';if(local.length)value+=' ('+local.slice(0,2);if(local.length>=2)value+=') ';const number=local.slice(2);value+=number.length>4?number.slice(0,number.length>8?5:4)+'-'+number.slice(number.length>8?5:4):number;input.value=value;};
  input.addEventListener('input',()=>{const before=input.value;const caret=input.selectionStart;const count=before.slice(0,caret).replace(/\D/g,'').length;format();if(caret<before.length){let seen=0;let position=0;for(;position<input.value.length;position++){if(/\d/.test(input.value[position]))seen++;if(seen>=count){position++;break;}}input.setSelectionRange(position,position);}});format();
 });
-document.querySelector('.menu-toggle')?.addEventListener('click', e => { const open=document.querySelector('#sidebar').classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open)); });
+const navigationToggle=document.querySelector('.menu-toggle');
+const navigationSidebar=document.querySelector('#sidebar');
+const navigationBackdrop=document.querySelector('.nav-backdrop');
+const setNavigationOpen=open=>{navigationSidebar?.classList.toggle('open',open);navigationToggle?.setAttribute('aria-expanded',String(open));if(navigationBackdrop)navigationBackdrop.hidden=!open;};
+navigationToggle?.addEventListener('click',()=>setNavigationOpen(!navigationSidebar.classList.contains('open')));
+navigationBackdrop?.addEventListener('click',()=>{setNavigationOpen(false);navigationToggle?.focus();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&navigationSidebar?.classList.contains('open')){setNavigationOpen(false);navigationToggle?.focus();}});
+window.matchMedia('(min-width: 801px)').addEventListener('change',event=>{if(event.matches)setNavigationOpen(false);});
 document.querySelectorAll('[data-print]').forEach(button=>button.addEventListener('click',()=>window.print()));
 document.querySelectorAll('[data-flow-toggle]').forEach(button=>button.addEventListener('click',()=>{const detail=document.getElementById(button.dataset.flowToggle);detail.hidden=!detail.hidden;button.setAttribute('aria-expanded',String(!detail.hidden));}));
 document.querySelectorAll('form[data-confirm]').forEach(form=>form.addEventListener('submit',e=>{if(!confirm(form.dataset.confirm))e.preventDefault();}));
@@ -70,4 +77,3 @@ if(saleForm){
 
 const queueRunner=document.querySelector('[data-mail-process]');
 if(queueRunner){(async()=>{let processed=0;try{while(true){const response=await fetch(queueRunner.dataset.mailProcess,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRF-TOKEN':queueRunner.dataset.token},body:JSON.stringify({action:'process'})});if(!response.ok)throw new Error();const result=await response.json();if(!result.processed)break;processed++;queueRunner.textContent='Tentativas realizadas: '+processed;}queueRunner.textContent='Processamento concluído: '+processed+' tentativa(s). Atualize a página para consultar os resultados.';}catch{queueRunner.textContent='Processamento interrompido. Consulte os pendentes e tente novamente; a fila também é processada pelo cron.';}})();}
-

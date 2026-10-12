@@ -69,7 +69,9 @@ class BusinessController extends Controller
             'notes' => 'nullable|string|max:3000', 'coupon' => 'nullable|string|max:40', 'order' => 'nullable|boolean', 'delivery' => 'nullable|boolean',
             'address' => 'nullable|string|max:255', 'region' => 'nullable|string|max:100', 'fee' => 'nullable|numeric|min:0']);
 
-        return redirect('/sales/'.$this->commerce->sell($d))->with('success', 'Venda registrada.');
+        $saleId = $this->commerce->sell($d);
+
+        return redirect('/sales/'.$saleId)->with('success', 'Venda registrada.')->with('sale_completed', $saleId);
     }
 
     public function sale(int $id)

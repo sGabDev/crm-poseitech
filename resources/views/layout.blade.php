@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ filemtime(public_path('assets/app.css')) }}">
 <link rel="stylesheet" href="{{ asset('assets/layout-fixes.css') }}?v={{ filemtime(public_path('assets/layout-fixes.css')) }}">
 <link rel="stylesheet" href="{{ asset('assets/refresh.css') }}?v={{ filemtime(public_path('assets/refresh.css')) }}">
+<link rel="stylesheet" href="{{ asset('assets/minimal.css') }}?v={{ filemtime(public_path('assets/minimal.css')) }}">
 <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}" defer>
 </script>
 </head>
@@ -29,18 +30,29 @@
 <small>{{ $company->plan->name ?? 'Administração da plataforma' }}</small>
 </div>
 </div>
-<nav>
+<nav aria-label="Navegação principal">
 @if(isset($company) && $company->enabled('customers') && auth()->user()->allows('customers'))
 <a class="{{ request()->is('whatsapp/atendimento*') ? 'active' : '' }}" href="{{ url('/whatsapp/atendimento') }}"><span class="nav-symbol">◉</span>WhatsApp · Atendimento</a>
 @endif
-<span class="nav-label">SEU NEGÓCIO</span>
+<span class="nav-label">Vendas e clientes</span>
 @if(isset($company))
-@foreach([['/dashboard','Visão geral','sales','◫'],['/opportunities','Oportunidades','customers','↗'],['/sales','Vendas','sales','▤'],['/records/customers','Clientes','customers','◎'],['/records/products','Produtos e serviços','products','▦'],['/cash-flow','Fluxo de caixa','cash','$'],['/cash','Caixa','cash','▣'],['/credit','Fiados','credit','◷'],['/stock','Estoque','stock','▥'],['/orders','Pedidos','orders','☷'],['/campaigns','Campanhas','campaigns','◇'],['/records/coupons','Cupons','loyalty','%'],['/records/suppliers','Fornecedores','finance','□'],['/records/goals','Metas','sales','⚑'],['/reports','Relatórios e previsão','finance','↗']] as [$path,$label,$module,$symbol])
-@if($company->enabled($module) && auth()->user()->allows($module))<a class="{{ request()->is(ltrim($path,'/'),ltrim($path,'/').'/*') ? 'active' : '' }}" href="{{ url($path) }}">
-<span class="nav-symbol">{{ $symbol }}</span>{{ $label }}</a>@endif
+@foreach([
+    'Vendas e clientes' => [['/dashboard','Visão geral','sales','◫'],['/sales','Vendas','sales','▤'],['/records/customers','Clientes','customers','◎'],['/opportunities','Oportunidades','customers','↗']],
+    'Operação' => [['/records/products','Produtos e serviços','products','▦'],['/orders','Pedidos','orders','☷'],['/stock','Estoque','stock','▥'],['/records/suppliers','Fornecedores','finance','□']],
+    'Financeiro' => [['/cash','Caixa','cash','▣'],['/cash-flow','Fluxo de caixa','cash','$'],['/credit','Fiados','credit','◷'],['/reports','Relatórios e previsão','finance','↗']],
+    'Crescimento' => [['/campaigns','Campanhas','campaigns','◇'],['/records/coupons','Cupons','loyalty','%'],['/records/goals','Metas','sales','⚑']],
+] as $group => $entries)
+@php($visibleEntries = array_filter($entries, fn ($entry) => $company->enabled($entry[2]) && auth()->user()->allows($entry[2])))
+@if(count($visibleEntries))
+@if($group !== 'Vendas e clientes')<span class="nav-label">{{ $group }}</span>@endif
+@foreach($visibleEntries as [$path,$label,$module,$symbol])
+<a class="{{ request()->is(ltrim($path,'/'),ltrim($path,'/').'/*') ? 'active' : '' }}" href="{{ url($path) }}" @if(request()->is(ltrim($path,'/'),ltrim($path,'/').'/*'))aria-current="page"@endif>
+<span class="nav-symbol" aria-hidden="true">{{ $symbol }}</span>{{ $label }}</a>
+@endforeach
+@endif
 @endforeach
 @can('manage-company')<span class="nav-label">GERENCIAR</span>
-<a href="{{ url('/whatsapp') }}">WhatsApp ? Bots</a>
+<a class="{{ request()->is('whatsapp') ? 'active' : '' }}" href="{{ url('/whatsapp') }}">Conexão do WhatsApp</a>
 <a href="{{ url('/alerts') }}">Notificações</a>
 @endcan
 <a href="{{ url('/settings') }}">Configurações</a>
@@ -60,7 +72,7 @@
 <div class="app">
 <header class="topbar">
 <button class="icon-button menu-toggle" aria-label="Abrir menu" aria-controls="sidebar" aria-expanded="false">☰</button>
-<span class="breadcrumb">Workspace <span>/</span> @yield('title','Visão geral')</span>
+<span class="breadcrumb">@yield('title','Visão geral')</span>
 <form class="global-search" action="{{ url('/search') }}">
 <span>⌕</span>
 <input name="q" placeholder="Buscar clientes, vendas, produtos..." aria-label="Busca global" value="{{ request('q') }}">
@@ -68,6 +80,7 @@
 </form>
 <span class="today">{{ now()->format('d/m/Y') }}</span>
 </header>
+<button class="nav-backdrop" type="button" aria-label="Fechar menu" hidden></button>
 @if(session('support_company'))<div class="support-banner">Acesso de suporte ativo. Ações registradas em auditoria.<form method="post" action="{{ url('/admin/leave') }}">@csrf<button>Encerrar suporte</button>
 </form>
 </div>@endif

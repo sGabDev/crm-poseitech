@@ -6,8 +6,18 @@
 <h1>Venda #{{ $sale->id }}</h1>
 <p>{{ $customer->name ?? 'Consumidor não identificado' }} · {{ \Carbon\Carbon::parse($sale->created_at)->timezone($company->timezone)->format('d/m/Y H:i') }}</p>
 </div>
-<a class="button" href="{{ url('/receipt/'.$sale->receipt_hash) }}" target="_blank">Comprovante digital ↗</a>
+<div class="actions">
+<a class="button secondary" href="{{ url('/receipt/'.$sale->receipt_hash) }}" target="_blank" rel="noopener">Ver comprovante ↗</a>
+@if(auth()->user()->allows('sales', true))<a class="button" href="{{ url('/sales/new') }}">+ Nova venda</a>@endif
 </div>
+</div>
+@if(session('sale_completed') == $sale->id)
+<section class="sale-completed" role="status">
+<span class="completion-icon" aria-hidden="true">✓</span>
+<div><h2>Venda concluída</h2><p>O registro foi salvo. Confira o comprovante ou inicie o próximo atendimento.</p></div>
+@if(auth()->user()->allows('sales', true))<a class="button" href="{{ url('/sales/new') }}">Fazer nova venda →</a>@endif
+</section>
+@endif
 <div class="kpi-grid">
 <div class="kpi">
 <span>Total</span>
