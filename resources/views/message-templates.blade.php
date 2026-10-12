@@ -2,7 +2,7 @@
 @section('title','Modelos de mensagem')
 @section('content')
 <script src="{{ asset('assets/message-templates.js') }}?v={{ filemtime(public_path('assets/message-templates.js')) }}" defer></script>
-<div class="page-heading"><div><h1>Modelos de mensagem</h1><p>Personalize os textos que sua empresa envia aos clientes.</p></div><a class="button secondary" href="{{ url('/settings') }}">Configurações</a></div>
+<div class="page-heading"><div><h1>Modelos de mensagem</h1><p>Os textos atuais já estão prontos para editar. Escolha um modelo e personalize para sua empresa.</p></div><div class="actions">@if(auth()->user()->allows('message_templates',true))<a class="button" href="{{ url('/message-templates?new=1') }}">+ Novo modelo</a>@endif<a class="button secondary" href="{{ url('/settings') }}">Configurações</a></div></div>
 <div class="grid">
 <section class="card">
 <h2>{{ $editing ? 'Editar modelo' : 'Criar modelo' }}</h2>

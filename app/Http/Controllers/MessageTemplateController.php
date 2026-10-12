@@ -15,7 +15,11 @@ class MessageTemplateController extends Controller
     public function index(Request $request)
     {
         $this->t->authorize('message_templates');
+        $this->templates->ensureDefaults();
         $editing = $request->filled('edit') ? $this->t->find('message_templates', (int) $request->input('edit')) : null;
+        if (! $editing && ! $request->boolean('new')) {
+            $editing = $this->t->query('message_templates')->orderByDesc('is_default')->orderBy('id')->first();
+        }
 
         $deliveries = $this->t->query('template_deliveries')->orderByDesc('id')->limit(20)->get();
         $emails = $this->t->query('email_logs')->whereIn('id', $deliveries->pluck('email_log_id')->filter())->get()->keyBy('id');

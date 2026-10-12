@@ -60,6 +60,23 @@ class CommerceTest extends TestCase
             'payments' => [['method' => 'pix', 'amount' => '50']], 'due_date' => now()->addDays(15)->toDateString(), 'installments' => 2], $overrides);
     }
 
+    public function test_current_message_templates_are_prefilled_once_without_overwriting_custom_defaults(): void
+    {
+        $id = app(Tenant::class)->insert('message_templates', ['name' => 'Personalizado', 'channel' => 'email', 'purpose' => 'receipt', 'subject' => 'Minha compra', 'body' => 'Meu texto para {nome}', 'is_default' => true]);
+        $this->get('/message-templates')->assertOk()->assertSee('Editar modelo')->assertSee('Meu texto para {nome}');
+        $this->assertDatabaseCount('message_templates', 5);
+        $this->assertDatabaseHas('message_templates', ['id' => $id, 'body' => 'Meu texto para {nome}', 'is_default' => true]);
+        $wa = DB::table('message_templates')->where('channel', 'whatsapp')->where('purpose', 'receipt')->first();
+        $this->assertStringContainsString('Comprovante: {comprovante}', $wa->body);
+        $this->post('/message-templates/'.$wa->id, ['name' => $wa->name, 'channel' => 'whatsapp', 'purpose' => 'receipt', 'body' => 'Obrigado, {nome}!', 'is_default' => 1])->assertSessionHasNoErrors();
+        $this->get('/message-templates')->assertOk();
+        $this->assertDatabaseCount('message_templates', 5);
+        $this->assertDatabaseHas('message_templates', ['id' => $wa->id, 'body' => 'Obrigado, {nome}!']);
+        $this->post('/message-templates/'.$wa->id.'/delete')->assertRedirect();
+        $this->get('/message-templates?new=1')->assertOk()->assertSee('Criar modelo');
+        $this->assertDatabaseCount('message_templates', 4);
+    }
+
     public function test_message_templates_are_scoped_validated_and_used_in_sale_receipts(): void
     {
         $data = ['name' => 'Meu comprovante', 'channel' => 'email', 'purpose' => 'receipt', 'subject' => 'Compra {venda} · {empresa}', 'body' => 'Obrigado, {nome}! Total {total}. {comprovante}', 'is_default' => 1];

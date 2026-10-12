@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Company;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class MessageTemplates
@@ -16,6 +18,30 @@ class MessageTemplates
     ];
 
     public function __construct(private Tenant $t) {}
+
+    public function ensureDefaults(): void
+    {
+        DB::transaction(function () {
+            $company = Company::whereKey($this->t->id())->lockForUpdate()->firstOrFail();
+            $settings = $company->settings ?? [];
+            if ($settings['message_templates_initialized'] ?? false) {
+                return;
+            }
+            $billing = 'Olá, {nome}. A conta {descricao} possui saldo de {saldo} e vencimento em {vencimento}. Entre em contato para combinar o pagamento. Se já pagou, fale com nossa equipe.';
+            $defaults = [
+                ['name' => 'Comprovante de venda · E-mail', 'channel' => 'email', 'purpose' => 'receipt', 'subject' => 'Comprovante da compra #{venda} · {empresa}', 'body' => 'Olá, {nome}. Sua compra #{venda} foi registrada. Total: {total}.'],
+                ['name' => 'Comprovante de venda · WhatsApp', 'channel' => 'whatsapp', 'purpose' => 'receipt', 'subject' => null, 'body' => "Olá, {nome}! Sua compra #{venda} na {empresa} foi finalizada. Total: {total}.\nComprovante: {comprovante}"],
+                ['name' => 'Lembrete de cobrança · E-mail', 'channel' => 'email', 'purpose' => 'billing', 'subject' => 'Lembrete de vencimento • {empresa}', 'body' => $billing],
+                ['name' => 'Lembrete de cobrança · WhatsApp', 'channel' => 'whatsapp', 'purpose' => 'billing', 'subject' => null, 'body' => $billing],
+            ];
+            foreach ($defaults as $data) {
+                $hasDefault = $this->t->query('message_templates')->where('channel', $data['channel'])->where('purpose', $data['purpose'])->where('is_default', true)->exists();
+                $this->t->insert('message_templates', $data + ['is_default' => ! $hasDefault]);
+            }
+            $company->update(['settings' => array_replace($settings, ['message_templates_initialized' => true])]);
+            $this->t->company->settings = $company->settings;
+        });
+    }
 
     public function validate(string $purpose, string $text): void
     {
