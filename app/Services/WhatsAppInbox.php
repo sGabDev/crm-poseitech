@@ -41,7 +41,7 @@ class WhatsAppInbox
                 $this->t->update('whatsapp_connections', $bot->id, ['inbox_cursor' => max($locked->inbox_cursor, (int) $result['cursor'])]);
             });
             $state = ['status' => $result['status'] ?? 'idle', 'more' => (bool) ($result['more'] ?? false)];
-            Cache::put($key, $state, $state['more'] ? 1 : 18);
+            Cache::put($key, $state, 1);
 
             return $state;
         } finally {
@@ -55,6 +55,22 @@ class WhatsAppInbox
             return;
         }
         $conversation = $this->t->query('whatsapp_conversations')->where('connection_id', $bot->id)->where('jid', $e['jid'])->first();
+        if (($e['type'] ?? '') === 'excluded') {
+            if ($conversation) {
+                $this->t->query('whatsapp_chat_messages')->where('conversation_id', $conversation->id)->where('remote_id', $e['id'])->delete();
+                $last = $this->t->query('whatsapp_chat_messages')->where('conversation_id', $conversation->id)->where('direction', '!=', 'note')->orderByDesc('message_at')->orderByDesc('id')->first();
+                $unread = $this->t->query('whatsapp_chat_messages')->where('conversation_id', $conversation->id)->where('direction', 'in')->where('status', 'received')->count();
+                $this->t->update('whatsapp_conversations', $conversation->id, ['last_body' => $last?->body, 'last_message_at' => $last?->message_at, 'unread' => $conversation->manual_unread ? max(1, $unread) : $unread]);
+                if (! $last && ! $conversation->customer_id && ! $this->t->query('whatsapp_chat_messages')->where('conversation_id', $conversation->id)->exists()) {
+                    $this->t->update('whatsapp_conversations', $conversation->id, ['status' => 'excluded']);
+                }
+            }
+
+            return;
+        }
+        if (isset($e['sourceJid']) && ! preg_match('/^[0-9]+@(s\.whatsapp\.net|lid)$/D', $e['sourceJid'])) {
+            return;
+        }
         if (in_array($e['type'] ?? '', ['edited', 'deleted'])) {
             if ($conversation) {
                 $this->t->query('whatsapp_chat_messages')->where('conversation_id', $conversation->id)->where('remote_id', $e['id'])->update([

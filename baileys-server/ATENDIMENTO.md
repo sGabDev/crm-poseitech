@@ -25,10 +25,18 @@ A central ocupa toda a janela, sem sidebar, cabeçalho ou rodapé do CRM. O bot�
 
 As respostas externas recebem automaticamente `*Nome do atendente:*` e duas quebras de linha antes da mensagem; o nome vem do usuário autenticado e não é repetido em tentativas do mesmo envio. Notas internas continuam sem assinatura externa. A tela interpreta negrito, itálico, riscado, código, monoespaçado, listas e citações, e oferece botões para inserir essas marcações no editor. Os modelos de respostas rápidas têm busca e prévia formatada.
 
-Um tique cinza indica enviada, dois cinza entregue e dois azuis lida pelo cliente. Mensagens recebidas mostram a leitura depois que o serviço aceita a solicitação de marcar como lida. Os indicadores dependem dos recibos disponibilizados pelo WhatsApp e das configurações de privacidade do contato; não é possível inferir uma leitura que não foi confirmada. A sincronização permanece a cada 30 segundos enquanto a aba está visível.
+Os tiques aparecem **somente nas mensagens enviadas**: um cinza indica enviada, dois cinza entregue e dois azuis lida pelo cliente. Os indicadores dependem dos recibos disponibilizados pelo WhatsApp e das configurações de privacidade do contato; não é possível inferir uma leitura que não foi confirmada.
+
+### Atualizações ao vivo e organização
+
+Atualize os dois servidores e execute `php artisan migrate --force` para a migration `2026_10_12_000001_whatsapp_attention`. A central mantém uma única requisição de espera por aba visível. O serviço libera a resposta assim que um evento foi persistido; o navegador importa a atualização sem esperar o antigo intervalo de 30 segundos. A espera expira após 25 segundos e se renova, com uma atualização de segurança a cada minuto. A aba oculta cancela a espera. A conexão com o banco é liberada enquanto o CRM espera pelo serviço remoto. O proxy deve permitir respostas de pelo menos 30 segundos e a hospedagem PHP precisa comportar as requisições de espera dos atendentes simultâneos.
+
+O botão **Não lida** mantém um lembrete persistente da conversa, inclusive durante atualizações e em outras abas. Reabrir a conversa explicitamente marca como lida. Isso não desfaz recibos já enviados ao contato. **Fixar** mantém a conversa no topo; **Resolver/Reabrir** altera o status sem abrir a ficha. Há cópia de texto e atalho para novas mensagens quando o histórico está rolado para cima.
+
+Status (`status@broadcast`), grupos e canais são filtrados pelo endereço original antes de considerar o número alternativo. O serviço também emite eventos de correção para registros de status importados por versões anteriores, preservando as mensagens reais do contato.
 
 - Lista de até 100 conversas recentes por filtro, busca por nome/telefone, filtro de status, não lidas, responsável atual e tag.
-- Histórico paginado, busca no texto e atualização automática a cada 30 segundos enquanto a aba está visível. Cada empresa tem cursor e trava de sincronização para evitar importações duplicadas.
+- Histórico paginado, busca no texto e atualização ao vivo enquanto a aba está visível. Cada empresa tem cursor e trava de sincronização para evitar importações duplicadas.
 - Envio de texto, imagens, PDF, texto, áudio e vídeo até 8 MB. Imagens são enviadas como imagem; os demais anexos como documento. Áudios, vídeos e imagens recebidos podem ser abertos no próprio chat. Arquivos expirados no WhatsApp podem não estar disponíveis para download.
 - Tags (até 15), responsável da equipe, status em aberto/aguardando/resolvido. Mensagens novas reabrem atendimentos resolvidos.
 - Notas internas apenas no CRM, respostas rápidas compartilhadas pela empresa e rascunhos mantidos enquanto esta página estiver aberta.
@@ -53,6 +61,7 @@ Todas as rotas exigem `Authorization: Bearer WHATSAPP_SERVICE_TOKEN`. O token fi
 | Método | Rota relativa a `/sessions/{empresa}/{bot}` | Uso |
 | --- | --- | --- |
 | GET | `/events?after=0` | Até 200 eventos por página, cursor e status da conexão |
+| GET | `/changes?after=0` | Espera até 25 segundos por uma nova revisão, sem expor o conteúdo das mensagens |
 | POST | `/chat-resolve` | `{ "phone": "5511999999999" }`, retorna o JID canônico |
 | POST | `/chat-send` | `{ "requestKey": "UUID", "jid": "...@s.whatsapp.net", "text": "Olá" }`; opcional `file: {base64, mime, name}` |
 | POST | `/chat-read` | `{ "jid": "...@s.whatsapp.net" }` |

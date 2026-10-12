@@ -25,7 +25,7 @@ class WhatsAppInboxController extends Controller
     public function index()
     {
         $this->access();
-        if (! Schema::hasTable('whatsapp_conversations')) {
+        if (! Schema::hasTable('whatsapp_conversations') || ! Schema::hasColumn('whatsapp_conversations', 'manual_unread')) {
             return response()->view('deployment-pending', ['public' => true], 503);
         }
 
@@ -46,7 +46,7 @@ class WhatsAppInboxController extends Controller
                     ? 'Atualize o servidor Baileys com o novo pacote para habilitar as conversas de atendimento.' : WhatsApp::connectionError($e)];
             }
         }
-        $q = $this->t->query('whatsapp_conversations');
+        $q = $this->t->query('whatsapp_conversations')->where('status', '!=', 'excluded');
         if ($search = trim($d['q'] ?? '')) {
             $q->where(fn ($query) => $query->where('name', 'like', '%'.$search.'%')->orWhere('phone', 'like', '%'.$search.'%'));
         }
@@ -61,8 +61,11 @@ class WhatsAppInboxController extends Controller
         if (! empty($d['tag'])) {
             $q->whereJsonContains('tags', $d['tag']);
         }
-        $conversations = $q->orderByDesc('last_message_at')->orderByDesc('id')->limit(100)->get();
+        $conversations = $q->orderByDesc('pinned')->orderByDesc('last_message_at')->orderByDesc('id')->limit(100)->get();
         $selected = ! empty($d['selected']) ? $this->t->find('whatsapp_conversations', $d['selected']) : null;
+        if ($selected?->status === 'excluded') {
+            $selected = null;
+        }
         if ($selected) {
             $this->t->query('whatsapp_chat_messages')->where('conversation_id', $selected->id)->where('status', 'sending')->where('updated_at', '<', now()->subMinutes(2))
                 ->update(['status' => 'unknown', 'error' => 'Sem confirmação. Confira no celular antes de enviar novamente.', 'updated_at' => now()]);
@@ -71,7 +74,7 @@ class WhatsAppInboxController extends Controller
         $customer = $selected?->customer_id ? $this->t->query('customers')->where('id', $selected->customer_id)->whereNull('anonymized_at')->first(['id', 'name', 'email', 'phone', 'tags']) : null;
         $counts = $this->t->query('whatsapp_conversations')->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status');
 
-        return response()->json(['connection' => $connection, 'conversations' => $conversations, 'selected' => $selected, 'messages' => $messages,
+        return response()->json(['connection' => $connection, 'cursor' => $bot ? (int) $this->t->query('whatsapp_connections')->where('id', $bot->id)->value('inbox_cursor') : 0, 'conversations' => $conversations, 'selected' => $selected, 'messages' => $messages,
             'customer' => $customer, 'counts' => $counts, 'hasOlder' => $messages->count() === 60,
             'staff' => DB::table('users')->where('company_id', $this->t->id())->where('active', true)->whereNull('deleted_at')->get(['id', 'name']),
             'replies' => $this->t->query('whatsapp_quick_replies')->orderBy('title')->get(['id', 'title', 'body'])])->header('Cache-Control', 'no-store');
@@ -130,7 +133,7 @@ class WhatsAppInboxController extends Controller
     {
         $this->access(true);
         $chat = $this->t->find('whatsapp_conversations', $id);
-        $d = $r->validate(['name' => 'sometimes|required|string|max:150', 'status' => 'sometimes|required|in:open,pending,resolved',
+        $d = $r->validate(['pinned' => 'sometimes|boolean', 'name' => 'sometimes|required|string|max:150', 'status' => 'sometimes|required|in:open,pending,resolved',
             'assigned_to' => 'sometimes|nullable|integer', 'tags' => 'sometimes|array|max:15', 'tags.*' => 'required|string|max:40', 'customer_id' => 'sometimes|nullable|integer']);
         if (! empty($d['assigned_to'])) {
             abort_unless(DB::table('users')->where('company_id', $this->t->id())->where('active', true)->whereNull('deleted_at')->where('id', $d['assigned_to'])->exists(), 422, 'Responsável inválido.');
@@ -150,20 +153,53 @@ class WhatsAppInboxController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    public function read(int $id)
+    public function watch(Request $r)
+    {
+        $this->access();
+        $after = $r->validate(['after' => 'required|integer|min:0'])['after'];
+        $bot = $this->inbox->connection();
+        if (! $bot) {
+            return response()->json(['cursor' => $after, 'disabled' => true]);
+        }
+        $company = $this->t->id();
+        // Do not hold a database connection while waiting on the remote service.
+        if (DB::connection()->getDatabaseName() !== ':memory:') {
+            DB::disconnect();
+        }
+        try {
+            return response()->json($this->wa->api($company, $bot->id, '/changes?after='.$after, [], 'get', 28))->header('Cache-Control', 'no-store');
+        } catch (\Throwable) {
+            return response()->json(['message' => 'Atualizações ao vivo temporariamente indisponíveis.'], 503);
+        }
+    }
+
+    public function unread(int $id)
+    {
+        $this->access(true);
+        $this->t->find('whatsapp_conversations', $id);
+        $this->t->query('whatsapp_conversations')->where('id', $id)->update(['manual_unread' => true, 'unread' => DB::raw('CASE WHEN unread < 1 THEN 1 ELSE unread END'), 'updated_at' => now()]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function read(Request $r, int $id)
     {
         $this->access(true);
         $chat = $this->t->find('whatsapp_conversations', $id);
+        if ($chat->manual_unread && ! $r->boolean('explicit')) {
+            return response()->json(['ok' => true, 'skipped' => true, 'ids' => []]);
+        }
         try {
             $result = $this->wa->api($this->t->id(), $chat->connection_id, '/chat-read', ['jid' => $chat->jid]);
         } catch (\Throwable $e) {
             return response()->json(['message' => WhatsApp::connectionError($e)], 503);
         }
-        $this->t->query('whatsapp_conversations')->where('id', $id)->where('unread', '>=', $chat->unread)->decrement('unread', $chat->unread);
+        $cleared = $this->t->query('whatsapp_conversations')->where('id', $id)->where('manual_unread', (bool) $chat->manual_unread)->where('unread', '>=', $chat->unread)
+            ->decrement('unread', $chat->unread, ['manual_unread' => false, 'updated_at' => now()]);
         $ids = array_slice($result['ids'] ?? [], 0, 100);
         $this->t->query('whatsapp_chat_messages')->where('conversation_id', $id)->where('direction', 'in')->whereIn('remote_id', $ids)->update(['status' => 'read', 'updated_at' => now()]);
 
-        return response()->json(['ok' => true, 'ids' => $ids]);
+        return response()->json(['ok' => true, 'ids' => $ids, 'skipped' => ! $cleared]);
     }
 
     public function send(Request $r, int $id)

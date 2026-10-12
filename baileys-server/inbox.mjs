@@ -5,6 +5,7 @@ export class Inbox {
   constructor({ store, normalize, download, logger }) {
     Object.assign(this, { store, normalize, download, logger });
     this.queues = new Map();
+    this.waiters = new Map();
   }
   file(key) { return `inbox-${key}.enc`; }
   serial(key, fn) {
@@ -18,11 +19,52 @@ export class Inbox {
   emit(data, event) {
     data.events.push({ ...event, sequence: ++data.sequence });
   }
+  privateJid(jid) { return /^[0-9]+@(s\.whatsapp\.net|lid)$/.test(jid || ''); }
+  async persist(key, data) {
+    await this.store.write(this.file(key), data);
+    for (const wake of [...(this.waiters.get(key) || [])]) wake(data.sequence);
+  }
+  async clean(key) {
+    return this.serial(key, async () => {
+      const data = await this.data(key); const excluded = new Set();
+      for (const [hash, item] of Object.entries(data.messages)) {
+        if (!this.privateJid(item.raw.key?.remoteJid)) {
+          excluded.add(item.event.jid + ':' + item.event.id);
+          this.emit(data, { type: 'excluded', jid: item.event.jid, id: item.event.id });
+          delete data.messages[hash];
+        }
+      }
+      if (excluded.size) {
+        data.events = data.events.filter(e => e.type === 'excluded' || !excluded.has(e.jid + ':' + e.id));
+        await this.persist(key, data);
+      }
+    });
+  }
+  async changes(key, after, signal, wait = 25000) {
+    await this.clean(key);
+    return this.serial(key, async () => {
+      const data = await this.data(key);
+      if (data.sequence > after) return { cursor: data.sequence };
+      if (signal?.aborted) return { cursor: after };
+      if ((this.waiters.get(key)?.size || 0) >= 20) throw fail(429, 'Too many watchers');
+      // Register inside the queue; release it before waiting so captures can proceed.
+      let wake, timeout;
+      const pending = new Promise(resolve => {
+        wake = cursor => { clearTimeout(timeout); this.waiters.get(key)?.delete(wake); signal?.removeEventListener('abort', abort); resolve({ cursor }); };
+        const abort = () => wake(after);
+        this.waiters.set(key, this.waiters.get(key) || new Set()); this.waiters.get(key).add(wake);
+        timeout = setTimeout(() => wake(after), wait);
+        signal?.addEventListener('abort', abort, { once: true });
+      });
+      return { pending };
+    }).then(result => result.pending || result);
+  }
   async capture(key, messages, historical = false) {
     return this.serial(key, async () => {
       const data = await this.data(key);
       let changed = false;
       for (const raw of messages) {
+        if (!this.privateJid(raw.key?.remoteJid)) continue;
         const jid = raw.key?.remoteJidAlt?.endsWith('@s.whatsapp.net') ? raw.key.remoteJidAlt : raw.key?.remoteJid;
         if (!jid || !/^[0-9]+@(s\.whatsapp\.net|lid)$/.test(jid) || !raw.key.id || !raw.message) continue;
         const hash = this.identity(jid, raw.key.id);
@@ -33,7 +75,7 @@ export class Inbox {
         const kind = content.imageMessage ? 'image' : content.videoMessage ? 'video' : content.audioMessage ? 'audio' : content.documentMessage ? 'document' : content.stickerMessage ? 'sticker' : 'text';
         const body = content.conversation || content.extendedTextMessage?.text || media?.caption || content.contactMessage?.displayName || (content.locationMessage ? `Localização: ${content.locationMessage.degreesLatitude}, ${content.locationMessage.degreesLongitude}` : '');
         if (!body && !media) continue;
-        const event = { type: 'message', jid, id: raw.key.id, name: raw.key.fromMe ? null : raw.pushName || null,
+        const event = { type: 'message', jid, sourceJid: raw.key.remoteJid, id: raw.key.id, name: raw.key.fromMe ? null : raw.pushName || null,
           phone: (jid.endsWith('@s.whatsapp.net') ? jid.split('@')[0] : null),
           fromMe: !!raw.key.fromMe, kind, body: String(body).slice(0, 8000), historical,
           timestamp: Number(raw.messageTimestamp || Math.floor(Date.now() / 1000)),
@@ -45,7 +87,7 @@ export class Inbox {
         this.emit(data, event);
         changed = true;
       }
-      if (changed) await this.store.write(this.file(key), data);
+      if (changed) await this.persist(key, data);
     });
   }
   async updates(key, updates) {
@@ -70,7 +112,7 @@ export class Inbox {
           this.emit(data, { type: 'status', jid: message.event.jid, id: message.event.id, status });
         }
       }
-      await this.store.write(this.file(key), data);
+      await this.persist(key, data);
     });
   }
   bind(key, socket, current) {
@@ -87,10 +129,11 @@ export class Inbox {
           this.emit(data, { type: 'deleted', jid: item.event.jid, id: item.event.id });
         }
       }
-      await this.store.write(this.file(key), data);
+      await this.persist(key, data);
     })));
   }
   async feed(key, after) {
+    await this.clean(key);
     await this.queues.get(key);
     const data = await this.data(key);
     const events = data.events.filter(e => e.sequence > after).slice(0, 200);

@@ -46,7 +46,9 @@ Route::middleware(['auth', 'can:platform'])->group(function () {
 });
 Route::middleware(['auth', 'company'])->group(function () {
     Route::get('/whatsapp/atendimento', [WhatsAppInboxController::class, 'index']);
-    Route::post('/whatsapp/atendimento/state', [WhatsAppInboxController::class, 'state'])->middleware('throttle:30,1');
+    Route::post('/whatsapp/atendimento/state', [WhatsAppInboxController::class, 'state'])->middleware('throttle:120,1');
+    Route::post('/whatsapp/atendimento/watch', [WhatsAppInboxController::class, 'watch'])->middleware('throttle:120,1');
+    Route::post('/whatsapp/atendimento/conversations/{id}/unread', [WhatsAppInboxController::class, 'unread'])->whereNumber('id')->middleware('throttle:30,1');
     Route::post('/whatsapp/atendimento/conversations', [WhatsAppInboxController::class, 'start'])->middleware('throttle:15,1');
     Route::get('/whatsapp/atendimento/conversations/{id}/history', [WhatsAppInboxController::class, 'history'])->whereNumber('id');
     Route::post('/whatsapp/atendimento/conversations/{id}/update', [WhatsAppInboxController::class, 'update'])->whereNumber('id');

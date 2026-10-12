@@ -183,4 +183,35 @@ class WhatsAppInboxTest extends TestCase
         $this->assertDatabaseHas('whatsapp_chat_messages', ['id' => $id, 'status' => 'read']);
         $this->assertDatabaseHas('whatsapp_conversations', ['id' => $this->chat, 'unread' => 0]);
     }
+
+    public function test_mark_unread_survives_automatic_read_until_explicitly_reopened_and_can_pin(): void
+    {
+        Http::fake(['*' => Http::response(['status' => 'ok', 'ids' => []])]);
+        $path = $this->base.'/conversations/'.$this->chat;
+        $this->postJson($path.'/unread')->assertOk();
+        $this->postJson($path.'/read')->assertOk()->assertJsonPath('skipped', true);
+        Http::assertNothingSent();
+        $this->postJson($this->base.'/state', ['filter' => 'unread'])->assertOk()->assertJsonCount(1, 'conversations');
+        $this->postJson($path.'/update', ['pinned' => true])->assertOk();
+        $this->assertDatabaseHas('whatsapp_conversations', ['id' => $this->chat, 'pinned' => true, 'manual_unread' => true, 'unread' => 1]);
+        $this->postJson($path.'/read', ['explicit' => true])->assertOk();
+        $this->assertDatabaseHas('whatsapp_conversations', ['id' => $this->chat, 'manual_unread' => false, 'unread' => 0]);
+    }
+
+    public function test_excluded_status_is_removed_while_real_messages_are_preserved(): void
+    {
+        $t = app(Tenant::class);
+        $t->insert('whatsapp_chat_messages', ['conversation_id' => $this->chat, 'remote_id' => 'status-old', 'direction' => 'in', 'body' => 'Status do contato', 'message_at' => now()]);
+        $t->insert('whatsapp_chat_messages', ['conversation_id' => $this->chat, 'remote_id' => 'real', 'direction' => 'in', 'body' => 'Olá de verdade', 'message_at' => now()]);
+        Http::fake(['*' => Http::response(['events' => [$this->event('status-old', 1, ['type' => 'excluded']), $this->event('status-new', 2, ['sourceJid' => 'status@broadcast'])], 'cursor' => 2, 'status' => 'connected'])]);
+        $this->postJson($this->base.'/state', ['sync' => true, 'selected' => $this->chat])->assertOk()->assertJsonCount(1, 'messages')->assertJsonPath('messages.0.remote_id', 'real');
+        $this->assertDatabaseMissing('whatsapp_chat_messages', ['remote_id' => 'status-new']);
+    }
+
+    public function test_live_watch_is_scoped_to_authenticated_company(): void
+    {
+        Http::fake(['*' => Http::response(['cursor' => 12])]);
+        $this->postJson($this->base.'/watch', ['after' => 11])->assertOk()->assertJsonPath('cursor', 12);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/sessions/'.$this->company->id.'/'.$this->bot.'/changes?after=11'));
+    }
 }

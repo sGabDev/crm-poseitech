@@ -10,6 +10,8 @@
   let messages = [], filter = 'all', busy = false, queued = false, stopped = false, timer;
   let sending = false, detailsDirty = false, searching = false, hasOlder = false, readBusy = false;
   let renderedSignature = '';
+  let watching = false, watchCursor = 0, watchTimer, watchController, queuedSync = false;
+  const heldUnread = new Set();
   const drafts = new Map();
   const statuses = { open: 'Em aberto', pending: 'Aguardando cliente', resolved: 'Resolvido' };
   const delivery = { pending: 'Na fila', sending: 'Enviando', sent: '✓', delivered: '✓✓', read: '✓✓', failed: 'Falhou', unknown: 'Sem confirmação', received: '', internal: 'Equipe' };
@@ -20,8 +22,8 @@
   const time = value => date(value).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const day = value => date(value).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' });
   function alert(message) { $('inbox-alert').textContent = message || ''; $('inbox-alert').hidden = !message; }
-  async function api(path, data = {}, method = 'POST') {
-    const controller = new AbortController();
+  async function api(path, data = {}, method = 'POST', externalController = null) {
+    const controller = externalController || new AbortController();
     const timeout = setTimeout(() => controller.abort(), 35000);
     try {
       const response = await fetch(base + path, { method, credentials: 'same-origin', signal: controller.signal,
@@ -37,7 +39,7 @@
   }
   function schedule(delay = 30000) { clearTimeout(timer); if (!stopped && !document.hidden) timer = setTimeout(() => refresh(true), delay); }
   async function refresh(sync = false) {
-    if (busy) { queued = true; return; }
+    if (busy) { queued = true; queuedSync = queuedSync || sync; return; }
     if (document.hidden || stopped) return;
     busy = true;
     const requested = selected;
@@ -45,6 +47,7 @@
       const result = await api('/state', { selected, q: $('inbox-search').value, filter, tag: $('inbox-tag-filter').value, sync: sync && root.dataset.bot === '1' });
       if (requested !== selected) { queued = true; return; }
       state = result;
+      watchCursor = Math.max(watchCursor, Number(result.cursor || 0));
       renderList();
       if (sync) {
         const connection = result.connection || {};
@@ -64,10 +67,22 @@
         }
         renderContact();
         markRead();
+      } else if (selected) {
+        selected = null; messages = []; $('inbox-welcome').hidden = false; $('inbox-active-chat').hidden = true; root.classList.remove('mobile-chat'); details(false);
       }
-      schedule(result.connection?.more ? 3000 : 30000);
+      schedule(result.connection?.more ? 3000 : root.dataset.live === '1' ? 60000 : 30000);
     } catch (error) { alert(error.message); schedule(45000); }
-    finally { busy = false; if (queued) { queued = false; refresh(false); } }
+    finally { busy = false; if (queued) { const syncQueued = queuedSync; queued = queuedSync = false; refresh(syncQueued); } startWatch(); }
+  }
+  async function startWatch() {
+    if (root.dataset.live !== '1' || root.dataset.bot !== '1' || stopped || document.hidden || watching || watchTimer) return;
+    watching = true; watchController = new AbortController(); let delay = 1000;
+    try {
+      const result = await api('/watch', { after: watchCursor }, 'POST', watchController);
+      if (result.disabled) { delay = 60000; return; }
+      if (!stopped && !document.hidden && Number(result.cursor) > watchCursor) await refresh(true);
+    } catch { delay = 15000; }
+    finally { watching = false; watchController = null; if (!stopped && !document.hidden) watchTimer = setTimeout(() => { watchTimer = null; startWatch(); }, delay); }
   }
   function renderList() {
     $('inbox-total').textContent = state.conversations.length === 100 ? '100+' : state.conversations.length;
@@ -82,6 +97,7 @@
       const avatar = el('span', 'inbox-avatar tone-' + (chat.id % 4), initials(chat.name || chat.phone));
       const content = el('div', 'inbox-conversation-content');
       const top = el('div', 'inbox-conversation-top'); top.append(el('strong', '', chat.name || chat.phone || 'Contato'), el('time', '', chat.last_message_at ? time(chat.last_message_at) : ''));
+      if (chat.pinned) top.prepend(el('span', 'inbox-pin-mark', '⌖'));
       const bottom = el('div', 'inbox-conversation-bottom');
       parseTags(chat.tags).slice(0, 2).forEach(tag => bottom.append(el('span', 'inbox-tag', tag)));
       if (!parseTags(chat.tags).length) bottom.append(el('span', 'inbox-tag', statuses[chat.status]));
@@ -100,6 +116,8 @@
   }
   function openChat(id) {
     if (sending) { alert('Aguarde a conclusão do envio antes de trocar de conversa.'); return; }
+    heldUnread.delete(id);
+    if (writable) api(`/conversations/${id}/read`, { explicit: true }).then(() => refresh(false)).catch(() => {});
     if (selected !== id) {
       storeDraft(); selected = id; messages = []; searching = false; detailsDirty = false;
       $('inbox-history-search').hidden = true; $('inbox-history-query').value = '';
@@ -116,6 +134,11 @@
   function renderContact() {
     const chat = state.selected;
     if (!chat) return;
+    $('inbox-mark-unread').textContent = chat.manual_unread ? '● Não lida' : '✉ Não lida';
+    $('inbox-mark-unread').classList.toggle('is-marked', !!chat.manual_unread);
+    $('inbox-pin-chat').textContent = chat.pinned ? '⌖ Fixada' : '⌖ Fixar';
+    $('inbox-pin-chat').classList.toggle('is-marked', !!chat.pinned);
+    $('inbox-resolve-chat').textContent = chat.status === 'resolved' ? '↻ Reabrir' : '✓ Resolver';
     $('inbox-chat-avatar').textContent = initials(chat.name);
     $('inbox-chat-name').textContent = chat.name || chat.phone || 'Contato';
     const staff = state.staff.find(user => user.id === chat.assigned_to);
@@ -150,6 +173,7 @@
     renderedSignature = signature;
     const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 100;
     const oldHeight = log.scrollHeight, oldTop = log.scrollTop;
+    const previousCount = Number(log.dataset.count || 0); log.dataset.count = messages.length;
     log.replaceChildren();
     if (hasOlder && !searching) { const older = el('button', 'inbox-older', 'Carregar mensagens anteriores'); older.type = 'button'; older.onclick = loadOlder; log.append(older); }
     if (!messages.length) log.append(el('span', 'inbox-day', searching ? 'Nenhuma mensagem encontrada.' : 'Inicie a conversa. As próximas mensagens ficam salvas aqui.'));
@@ -174,10 +198,13 @@
       if (message.status === 'failed' && writable) { const retry = el('button', '', 'Tentar novamente'); retry.type = 'button'; retry.onclick = () => retryMessage(message); bubble.append(retry); }
       const footer = el('footer'); const status = el('span', 'inbox-receipt ' + (message.status === 'read' ? 'read' : ''), delivery[message.status] ?? message.status); status.title = message.direction === 'in' && message.status === 'read' ? 'Leitura enviada ao WhatsApp' : ({ sent: 'Enviada', delivered: 'Entregue', read: 'Lida pelo cliente', pending: 'Aguardando envio', sending: 'Enviando', received: 'Recebida' })[message.status] || message.status;
       status.setAttribute('aria-label', status.title);
-      footer.append(el('time', '', time(message.message_at)), status); bubble.append(footer); log.append(bubble);
+      footer.append(el('time', '', time(message.message_at)));
+      if (message.direction === 'out' || message.direction === 'note') footer.append(status);
+      if (message.body) { const copy = el('button', 'inbox-copy-message', 'Copiar'); copy.type = 'button'; copy.onclick = async () => { try { await navigator.clipboard.writeText(message.body); copy.textContent = 'Copiado'; } catch { alert('Selecione o texto da mensagem e copie pelo navegador.'); } }; footer.prepend(copy); }
+      bubble.append(footer); log.append(bubble);
     }
     if (atBottom || forceBottom || oldHeight === 0) log.scrollTop = log.scrollHeight;
-    else log.scrollTop = oldTop;
+    else { log.scrollTop = oldTop; if (messages.length > previousCount) $('inbox-jump-latest').hidden = false; }
   }
   async function loadOlder() {
     const chatId = selected;
@@ -189,10 +216,10 @@
     } catch (error) { alert(error.message); }
   }
   async function markRead() {
-    if (!writable || !state.selected?.unread || readBusy || document.hidden) return;
+    if (!writable || !state.selected?.unread || state.selected.manual_unread || heldUnread.has(state.selected.id) || readBusy || document.hidden) return;
     readBusy = true;
     const chatId = state.selected.id;
-    try { const result = await api(`/conversations/${chatId}/read`); if (state.selected?.id === chatId) { state.selected.unread = 0; const ids = new Set(result.ids || []); messages.forEach(m => { if (m.direction === 'in' && ids.has(m.remote_id)) m.status = 'read'; }); renderMessages(); } const chat = state.conversations.find(c => c.id === chatId); if (chat) chat.unread = 0; renderList(); }
+    try { const result = await api(`/conversations/${chatId}/read`); if (result.skipped) return; if (state.selected?.id === chatId) { state.selected.unread = 0; const ids = new Set(result.ids || []); messages.forEach(m => { if (m.direction === 'in' && ids.has(m.remote_id)) m.status = 'read'; }); renderMessages(); } const chat = state.conversations.find(c => c.id === chatId); if (chat) chat.unread = 0; renderList(); }
     catch { /* Local unread status will be retried on the next refresh. */ }
     finally { readBusy = false; }
   }
@@ -236,6 +263,11 @@
     action(`/conversations/${selected}/update`, { name: form.name.value, status: form.status.value, assigned_to: form.assigned_to.value ? Number(form.assigned_to.value) : null, tags: form.tags.value.split(',').map(s => s.trim()).filter(Boolean) }, () => { detailsDirty = false; refresh(false); }); };
   function details(open) { $('inbox-details').hidden = !open; root.classList.toggle('has-details', open); }
   $('inbox-details-toggle').onclick = () => details($('inbox-details').hidden); $('inbox-details-close').onclick = () => details(false);
+  $('inbox-mark-unread').onclick = async () => { if (!selected || !writable) return; const id = selected; heldUnread.add(id); try { await api(`/conversations/${id}/unread`); alert('Conversa marcada como não lida. Abra novamente para marcar como lida.'); refresh(false); } catch (error) { heldUnread.delete(id); alert(error.message); } };
+  $('inbox-pin-chat').onclick = () => { if (selected && writable) action(`/conversations/${selected}/update`, { pinned: !state.selected?.pinned }, () => refresh(false)); };
+  $('inbox-resolve-chat').onclick = () => { if (selected && writable) action(`/conversations/${selected}/update`, { status: state.selected?.status === 'resolved' ? 'open' : 'resolved' }, () => refresh(false)); };
+  $('inbox-jump-latest').onclick = () => { $('inbox-messages').scrollTop = $('inbox-messages').scrollHeight; $('inbox-jump-latest').hidden = true; };
+  $('inbox-messages').addEventListener('scroll', () => { if ($('inbox-messages').scrollHeight - $('inbox-messages').scrollTop - $('inbox-messages').clientHeight < 100) $('inbox-jump-latest').hidden = true; });
   $('inbox-back').onclick = () => { root.classList.remove('mobile-chat'); details(false); };
   $('inbox-new').onclick = () => $('inbox-new-dialog').showModal();
   document.querySelectorAll('[data-close-dialog]').forEach(button => { button.onclick = () => button.closest('dialog').close(); });
@@ -276,8 +308,8 @@
   $('inbox-status-filter').onchange = () => { filter = $('inbox-status-filter').value; document.querySelectorAll('[data-filter]').forEach(button => button.classList.remove('active')); refresh(false); };
   document.querySelectorAll('[data-filter]').forEach(button => { button.onclick = () => { filter = button.dataset.filter; $('inbox-status-filter').value = 'all'; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('active', b === button)); refresh(false); }; });
   $('inbox-refresh').onclick = () => refresh(true);
-  document.addEventListener('visibilitychange', () => { clearTimeout(timer); if (!document.hidden) refresh(true); });
-  window.addEventListener('pagehide', () => { stopped = true; clearTimeout(timer); });
+  document.addEventListener('visibilitychange', () => { clearTimeout(timer); clearTimeout(watchTimer); watchTimer = null; if (document.hidden) watchController?.abort(); else refresh(true); });
+  window.addEventListener('pagehide', () => { stopped = true; clearTimeout(timer); clearTimeout(watchTimer); watchTimer = null; watchController?.abort(); });
   window.addEventListener('pageshow', event => { if (event.persisted) { stopped = false; refresh(true); } });
   if (selected) { $('inbox-welcome').hidden = true; $('inbox-active-chat').hidden = false; root.classList.add('mobile-chat'); }
   if (selected && window.matchMedia('(min-width: 1251px)').matches) details(true);

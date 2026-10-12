@@ -69,12 +69,17 @@ const server=http.createServer(async(req,res)=>{
   if(provided.length!==expected.length || !timingSafeEqual(provided,expected))throw error(401,'Unauthorized');
   if(req.url==='/health' && req.method==='GET'){res.end(JSON.stringify({status:'ok'}));return;}
   const url = new URL(req.url, 'http://localhost');
-  const match=/^\/sessions\/([1-9][0-9]{0,18})\/([1-9][0-9]{0,18})(?:\/(connect|reconnect|disconnect|messages|events|chat-send|chat-read|chat-media|chat-resolve))?$/.exec(url.pathname);
+  const match=/^\/sessions\/([1-9][0-9]{0,18})\/([1-9][0-9]{0,18})(?:\/(connect|reconnect|disconnect|messages|events|changes|chat-send|chat-read|chat-media|chat-resolve))?$/.exec(url.pathname);
   if(!match)throw error(404,'Not found');
   const key=match[1]+'-'+match[2];const action=match[3];const s=entry(key);
-  if(req.method==='GET' && action==='events') {
+  if(req.method==='GET' && (action==='events' || action==='changes')) {
    const after = Number(url.searchParams.get('after') || 0);
    if(!Number.isSafeInteger(after) || after<0)throw error(422,'Invalid cursor');
+   if(action==='changes') {
+    const controller = new AbortController(); const cancel = () => controller.abort(); res.once('close', cancel);
+    try { const result = await inbox.changes(key,after,controller.signal); if(!res.destroyed)res.end(JSON.stringify(result)); }
+    finally { res.off('close',cancel); } return;
+   }
    res.end(JSON.stringify({...await inbox.feed(key,after), status:s.status}));return;
   }
   if(req.method==='GET' && !action){res.end(JSON.stringify(publicState(s)));return;}

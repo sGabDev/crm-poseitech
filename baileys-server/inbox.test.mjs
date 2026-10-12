@@ -83,3 +83,28 @@ test('recipient receipts advance to delivered/read and incoming read requests us
   assert.deepEqual(result.ids, ['old', 'latest']);
   assert.deepEqual(socket.readKeys.map(k => k.id), ['old', 'latest']);
 });
+test('status broadcasts cannot use the phone alias to enter a private chat', async () => {
+  const inbox = fixture();
+  await inbox.capture('1-1', [raw('status', { key: { id: 'status', remoteJid: 'status@broadcast', remoteJidAlt: '5511999999999@s.whatsapp.net' } }), raw('normal')]);
+  assert.deepEqual((await inbox.feed('1-1', 0)).events.map(e => e.id), ['normal']);
+  const data = await inbox.data('1-1');
+  const polluted = raw('legacy-status', { key: { id: 'legacy-status', remoteJid: 'status@broadcast', remoteJidAlt: '5511999999999@s.whatsapp.net' } });
+  const event = { type: 'message', id: 'legacy-status', jid: '5511999999999@s.whatsapp.net' };
+  data.messages[inbox.identity(event.jid, event.id)] = { raw: polluted, event };
+  inbox.emit(data, event); await inbox.store.write(inbox.file('1-1'), data);
+  const feed = await inbox.feed('1-1', 0);
+  assert.deepEqual(feed.events.map(e => e.type), ['message', 'excluded']);
+  assert.equal((await inbox.data('1-1')).messages[inbox.identity(event.jid, event.id)], undefined);
+});
+test('live watch wakes on persisted messages without blocking captures and cancels cleanly', async () => {
+  const inbox = fixture(); const controller = new AbortController();
+  const waiting = inbox.changes('1-1', 0, controller.signal, 1000);
+  await new Promise(resolve => setImmediate(resolve));
+  await inbox.capture('1-1', [raw('new')]);
+  assert.equal((await waiting).cursor, 1);
+  assert.equal((await inbox.changes('1-1', 0, undefined, 10)).cursor, 1);
+  const cancel = new AbortController(); const idle = inbox.changes('1-1', 1, cancel.signal, 1000);
+  await new Promise(resolve => setImmediate(resolve)); cancel.abort();
+  assert.equal((await idle).cursor, 1); assert.equal(inbox.waiters.get('1-1').size, 0);
+  assert.equal((await inbox.changes('1-1', 1, undefined, 5)).cursor, 1);
+});

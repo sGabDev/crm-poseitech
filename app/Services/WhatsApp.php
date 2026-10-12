@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
@@ -12,7 +14,7 @@ class WhatsApp
 
     public static function connectionError(\Throwable $error): string
     {
-        if ($error instanceof \Illuminate\Http\Client\RequestException) {
+        if ($error instanceof RequestException) {
             return match ($error->response->status()) {
                 401 => 'Token recusado pelo Baileys. Configure o mesmo WHATSAPP_SERVICE_TOKEN nos dois servidores e limpe o cache de configuração do CRM.',
                 403 => 'O servidor Baileys bloqueou o acesso. Verifique as regras do proxy e a liberação do IP do CRM.',
@@ -22,7 +24,7 @@ class WhatsApp
                 default => 'O serviço Baileys respondeu com erro HTTP '.$error->response->status().'. Consulte o console da hospedagem.',
             };
         }
-        if ($error instanceof \Illuminate\Http\Client\ConnectionException) {
+        if ($error instanceof ConnectionException) {
             if (str_contains($error->getMessage(), 'cURL error 7')) {
                 return 'Conexão recusada pelo servidor Baileys. Inicie o serviço e confira WHATSAPP_SERVICE_HOST=0.0.0.0 e a porta atribuída no painel da hospedagem.';
             }
@@ -39,13 +41,13 @@ class WhatsApp
         return 'Resposta inválida do serviço Baileys. Confira se a URL aponta para a API e consulte o console da hospedagem.';
     }
 
-    public function api(int $company, int $connection, string $action = '', array $data = [], string $method = 'post'): array
+    public function api(int $company, int $connection, string $action = '', array $data = [], string $method = 'post', ?int $timeout = null): array
     {
         if (! config('whatsapp.token')) {
             throw new \RuntimeException('Serviço WhatsApp não configurado.');
         }
 
-        return Http::withToken(config('whatsapp.token'))->connectTimeout(3)->timeout(strtolower($method) === 'get' ? 5 : 25)
+        return Http::withToken(config('whatsapp.token'))->connectTimeout(3)->timeout($timeout ?? (strtolower($method) === 'get' ? 5 : 25))
             ->send(strtoupper($method), rtrim(config('whatsapp.url'), '/')."/sessions/$company/$connection".$action, ['json' => $data])->throw()->json();
     }
 
