@@ -1,6 +1,7 @@
 @extends('layout')
 @section('title','WhatsApp · Bots')
 @section('content')
+<div class="wa-inbox-shortcut"><a class="button" href="{{ url('/whatsapp/atendimento') }}">Abrir central de atendimento →</a></div>
 <div class="page-heading wa-heading"><div><span class="eyebrow">CONECTE. VENDA. CONTINUE A CONVERSA.</span><h1>Seu WhatsApp, conectado.</h1><p>Um número para sua empresa. Conexão, automação e comprovantes em um só lugar.</p></div><span class="wa-count"><i></i>1 bot por empresa</span></div>
 <div class="wa-layout"><div class="wa-connections">
 @forelse($connections as $bot)

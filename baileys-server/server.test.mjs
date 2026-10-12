@@ -45,6 +45,11 @@ test('standalone service starts outside CRM and authenticates its API', { timeou
     const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' };
     assert.equal((await fetch(base + '/health')).status, 401);
     assert.equal((await fetch(base + '/health', { headers })).status, 200);
+    assert.equal((await fetch(base + '/sessions/1/1/events?after=0')).status, 401);
+    const feed = await fetch(base + '/sessions/1/1/events?after=0', { headers });
+    assert.deepEqual(await feed.json(), { events: [], cursor: 0, more: false, status: 'idle' });
+    assert.equal((await fetch(base + '/sessions/1/1/events?after=-1', { headers })).status, 422);
+    assert.equal((await fetch(base + '/sessions/1/1/chat-send', { method: 'POST', headers, body: JSON.stringify({ requestKey: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', jid: '5511999999999@s.whatsapp.net', text: 'Test' }) })).status, 409);
     for (const session of ['1/1', '2/1']) {
       const response = await fetch(base + '/sessions/' + session, { headers });
       assert.deepEqual(await response.json(), { status: 'idle', qr: null, phone: null });

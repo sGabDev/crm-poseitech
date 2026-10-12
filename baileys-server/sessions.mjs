@@ -1,6 +1,6 @@
 export class SessionManager {
-  constructor({ store, registry, makeSocket, freshCredentials, appStateKey, disconnectReasons, qrImage, logger, isStopping = () => false }) {
-    Object.assign(this, { store, registry, makeSocket, freshCredentials, appStateKey, disconnectReasons, qrImage, logger, isStopping });
+  constructor({ store, registry, makeSocket, freshCredentials, appStateKey, disconnectReasons, qrImage, logger, isStopping = () => false, onSocket = () => {}, getMessage }) {
+    Object.assign(this, { store, registry, makeSocket, freshCredentials, appStateKey, disconnectReasons, qrImage, logger, isStopping, onSocket, getMessage });
     this.sessions = new Map();
   }
 
@@ -74,9 +74,10 @@ export class SessionManager {
       session.status = 'connecting';
       session.qr = null;
       session.startedAt = Date.now();
-      try { socket = this.makeSocket({ auth: { creds: auth.creds, keys } }); }
+      try { socket = this.makeSocket({ auth: { creds: auth.creds, keys }, ...(this.getMessage ? { getMessage: messageKey => this.getMessage(key, messageKey) } : {}) }); }
       catch (error) { session.status = 'idle'; throw error; }
       session.socket = socket;
+      this.onSocket(key, socket, current);
       socket.ev.on('creds.update', updates => {
         this.serial(key, async () => {
           if (!current()) return;

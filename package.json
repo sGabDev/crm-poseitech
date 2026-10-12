@@ -6,6 +6,7 @@
     "test": "node scripts/check.cjs --test",
     "whatsapp": "node services/whatsapp/server.mjs",
     "test:whatsapp": "node baileys-server/store.test.mjs",
-    "test:whatsapp-poll": "node scripts/whatsapp-poll.test.cjs"
+    "test:whatsapp-poll": "node scripts/whatsapp-poll.test.cjs",
+    "test:whatsapp-inbox": "node scripts/whatsapp-inbox.test.cjs"
   }
 }

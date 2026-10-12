@@ -3,3 +3,4 @@ import './server.test.mjs';
 import './lock.test.mjs';
 import './destination.test.mjs';
 import './sessions.test.mjs';
+import './inbox.test.mjs';

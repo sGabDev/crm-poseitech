@@ -1,0 +1,40 @@
+@extends('layout')
+@section('title','WhatsApp · Atendimento')
+@section('content')
+<link rel="stylesheet" href="{{ asset('assets/whatsapp-inbox.css') }}?v={{ filemtime(public_path('assets/whatsapp-inbox.css')) }}">
+<div class="inbox-heading"><div><span class="eyebrow">CONVERSAS QUE APROXIMAM</span><h1>Central de atendimento<span>WhatsApp</span></h1></div><div class="inbox-heading-actions"><span id="inbox-connection" class="inbox-connection">● Consultando conexão</span>@can('manage-company')<a href="{{ url('/whatsapp') }}">Gerenciar conexão ↗</a>@endcan</div></div>
+<div id="inbox-alert" class="inbox-alert" role="status" hidden></div>
+<div class="inbox-shell" id="inbox" data-base="{{ url('/whatsapp/atendimento') }}" data-token="{{ csrf_token() }}" data-write="{{ $canWrite ? '1' : '0' }}" data-user="{{ auth()->id() }}" data-bot="{{ $bot ? '1' : '0' }}">
+    <aside class="inbox-list-panel">
+        <header class="inbox-panel-header"><div><h2>Conversas <span id="inbox-total">0</span></h2><small>Seu relacionamento começa aqui.</small></div><button type="button" class="inbox-icon" id="inbox-new" title="Nova conversa" aria-label="Nova conversa" @disabled(!$canWrite || !$bot)>＋</button></header>
+        <label class="inbox-search"><span aria-hidden="true">⌕</span><input id="inbox-search" placeholder="Buscar nome ou telefone" aria-label="Buscar conversas"></label>
+        <div class="inbox-filters" role="group" aria-label="Filtrar conversas"><button data-filter="all" class="active">Todas</button><button data-filter="unread">Não lidas</button><button data-filter="mine">Minhas</button></div>
+        <div class="inbox-filter-row"><select id="inbox-status-filter" aria-label="Filtrar status"><option value="all">Todos os atendimentos</option><option value="open">Em aberto</option><option value="pending">Aguardando</option><option value="resolved">Resolvidos</option></select><input id="inbox-tag-filter" placeholder="Filtrar tag" aria-label="Filtrar por tag" maxlength="40"></div>
+        <div class="inbox-conversations" id="inbox-conversations" aria-label="Lista de conversas"><div class="inbox-list-empty">Carregando suas conversas…</div></div>
+        <footer class="inbox-list-footer"><span id="inbox-sync-time">Histórico protegido por empresa</span><button id="inbox-refresh" type="button" aria-label="Atualizar conversas">↻ Atualizar</button></footer>
+    </aside>
+    <section class="inbox-chat-panel">
+        <div id="inbox-welcome" class="inbox-welcome"><div class="inbox-welcome-art"><span>◌</span><i>✓</i></div><span class="eyebrow">MENOS DISTÂNCIA. MAIS CONVERSA.</span><h2>Um bom atendimento<br>faz toda a diferença.</h2><p>Selecione uma conversa para responder, organizar o contato e acompanhar cada etapa do relacionamento.</p><div class="inbox-welcome-features"><span>◉ Histórico</span><span>⌑ Tags</span><span>♧ Equipe</span></div>@if(!$bot)<a class="button" href="{{ url('/whatsapp') }}">Conectar WhatsApp da empresa</a>@endif<small>O histórico anterior depende das mensagens disponibilizadas pelo WhatsApp.</small></div>
+        <div id="inbox-active-chat" hidden>
+            <header class="inbox-chat-header"><button id="inbox-back" type="button" class="inbox-icon" aria-label="Voltar às conversas">←</button><span class="inbox-avatar" id="inbox-chat-avatar"></span><div><h2 id="inbox-chat-name"></h2><small id="inbox-chat-subtitle"></small></div><div class="inbox-chat-tools"><button type="button" id="inbox-chat-search-toggle" class="inbox-icon" title="Buscar no histórico" aria-label="Buscar no histórico">⌕</button><button type="button" id="inbox-details-toggle" class="inbox-icon" title="Ficha do contato" aria-label="Ficha do contato">☷</button></div></header>
+            <form class="inbox-history-search" id="inbox-history-search" hidden><input id="inbox-history-query" placeholder="Buscar mensagens no histórico" maxlength="100" aria-label="Buscar mensagens"><button>Buscar</button><button type="button" id="inbox-history-clear">Limpar</button></form>
+            <div id="inbox-messages" class="inbox-messages" role="log" aria-label="Histórico da conversa" tabindex="0"></div>
+            <div class="inbox-composer-wrap">
+                <div class="inbox-composer-tools"><button type="button" id="inbox-replies-open" @disabled(!$canWrite)>ϟ Respostas rápidas</button><label class="inbox-note-switch"><input type="checkbox" id="inbox-note" @disabled(!$canWrite)>Nota interna <span>visível só para a equipe</span></label></div>
+                <form id="inbox-composer" class="inbox-composer"><label class="inbox-attach" title="Anexar arquivo">＋<input id="inbox-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,audio/mpeg,audio/ogg,audio/mp4,video/mp4" aria-label="Anexar arquivo" @disabled(!$canWrite)></label><textarea id="inbox-body" rows="1" maxlength="8000" placeholder="Escreva sua mensagem…" aria-label="Mensagem" @disabled(!$canWrite)></textarea><button id="inbox-send" type="submit" aria-label="Enviar mensagem" @disabled(!$canWrite)>➤</button></form>
+                <div class="inbox-compose-footer"><span id="inbox-file-name">Enter envia · Shift + Enter quebra a linha</span><span id="inbox-draft-state"></span></div>
+            </div>
+        </div>
+    </section>
+    <aside id="inbox-details" class="inbox-details-panel" hidden>
+        <header><h2>Detalhes do contato</h2><button class="inbox-icon" id="inbox-details-close" type="button" aria-label="Fechar detalhes">×</button></header>
+        <div class="inbox-contact-card"><span id="inbox-detail-avatar" class="inbox-avatar large"></span><h3 id="inbox-detail-name"></h3><p id="inbox-detail-phone"></p><span class="inbox-contact-status" id="inbox-detail-status"></span></div>
+        <form id="inbox-contact-form" class="inbox-details-form"><label>Nome do contato<input name="name" maxlength="150" required @disabled(!$canWrite)></label><label>Status do atendimento<select name="status" @disabled(!$canWrite)><option value="open">Em aberto</option><option value="pending">Aguardando cliente</option><option value="resolved">Resolvido</option></select></label><label>Responsável<select name="assigned_to" @disabled(!$canWrite)><option value="">Sem responsável</option></select></label><label>Tags <small>Separe por vírgulas</small><input name="tags" placeholder="VIP, orçamento, pós-venda" maxlength="600" @disabled(!$canWrite)></label><div id="inbox-detail-tags" class="inbox-tags"></div><button class="full-width" @disabled(!$canWrite)>Salvar atendimento</button></form>
+        <section class="inbox-customer-section"><span class="eyebrow">CLIENTE NO CRM</span><div id="inbox-customer"></div></section>
+        <section class="inbox-details-help"><span>✦</span><p>Use notas internas para compartilhar contexto com a equipe. Elas nunca são enviadas ao cliente.</p></section>
+    </aside>
+</div>
+<dialog id="inbox-new-dialog" class="inbox-dialog"><form id="inbox-new-form"><header><h2>Nova conversa</h2><button type="button" data-close-dialog aria-label="Fechar">×</button></header><p>Inicie o atendimento com o WhatsApp do cliente.</p><label>Nome<input name="name" maxlength="150" placeholder="Nome do contato"></label><label>Telefone com DDD<input name="phone" required maxlength="30" placeholder="55 11 99999-9999" inputmode="tel"></label><button>Iniciar conversa</button></form></dialog>
+<dialog id="inbox-replies-dialog" class="inbox-dialog"><header><h2>Respostas rápidas</h2><button type="button" data-close-dialog aria-label="Fechar">×</button></header><p>Escolha uma resposta e ajuste antes de enviar.</p><div id="inbox-replies-list"></div><details><summary>Criar resposta rápida</summary><form id="inbox-reply-form"><label>Título<input name="title" required maxlength="80" placeholder="Ex.: Boas-vindas"></label><label>Mensagem<textarea name="body" required maxlength="4000" rows="4"></textarea></label><button>Salvar resposta</button></form></details></dialog>
+<script src="{{ asset('assets/whatsapp-inbox.js') }}?v={{ filemtime(public_path('assets/whatsapp-inbox.js')) }}" defer></script>
+@endsection

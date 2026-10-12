@@ -1,5 +1,7 @@
 # WhatsApp por empresa (Baileys)
 
+Para conversas, tags, atendimento da equipe e histórico, siga [WHATSAPP-ATENDIMENTO.md](WHATSAPP-ATENDIMENTO.md). A central usa o mesmo bot da empresa.
+
 ## Servidor separado
 
 O pacote independente fica em `baileys-server/`. Copie somente essa pasta para o servidor de WhatsApp e siga `baileys-server/README.md`. Ela tem dependências, configuração e dados próprios, sem PHP ou banco do CRM. O arquivo `baileys-server.zip` contém o pacote pronto para transferência, sem segredos, sessões ou `node_modules`.

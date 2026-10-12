@@ -27,6 +27,9 @@
 </div>
 </div>
 <nav>
+@if(isset($company) && $company->enabled('customers') && auth()->user()->allows('customers'))
+<a class="{{ request()->is('whatsapp/atendimento*') ? 'active' : '' }}" href="{{ url('/whatsapp/atendimento') }}"><span class="nav-symbol">◉</span>WhatsApp · Atendimento</a>
+@endif
 <span class="nav-label">SEU NEGÓCIO</span>
 @if(isset($company))
 @foreach([['/dashboard','Visão geral','sales','◫'],['/opportunities','Oportunidades','customers','↗'],['/sales','Vendas','sales','▤'],['/records/customers','Clientes','customers','◎'],['/records/products','Produtos e serviços','products','▦'],['/cash-flow','Fluxo de caixa','cash','$'],['/cash','Caixa','cash','▣'],['/credit','Fiados','credit','◷'],['/stock','Estoque','stock','▥'],['/orders','Pedidos','orders','☷'],['/campaigns','Campanhas','campaigns','◇'],['/records/coupons','Cupons','loyalty','%'],['/records/suppliers','Fornecedores','finance','□'],['/records/goals','Metas','sales','⚑'],['/reports','Relatórios e previsão','finance','↗']] as [$path,$label,$module,$symbol])

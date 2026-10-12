@@ -1,5 +1,9 @@
 # Servidor Baileys independente
 
+## Central de atendimento
+
+O serviço também recebe mensagens, histórico, recibos de leitura e anexos para a central **WhatsApp · Atendimento** do CRM. A interface, as tags, os responsáveis e as notas internas ficam no CRM. Atualize os dois sistemas para habilitar esta função. Veja [ATENDIMENTO.md](ATENDIMENTO.md) para instalação, permissões, limites e rotas da API. Preserve os arquivos `data/inbox-*.enc` ao atualizar.
+
 Copie **somente esta pasta** para o servidor de WhatsApp. Ela não depende de PHP, Laravel, banco do CRM nem dos arquivos da pasta superior. Requer Node.js 22 ou superior e acesso à internet. As sessões de todas as empresas são criadas e armazenadas neste servidor, separadas por empresa e bot.
 
 O menu para criar bots e escanear QR code permanece no CRM. O CRM chama a API deste serviço; o navegador não recebe o token de acesso. Este pacote é o serviço de conexão, sem painel web próprio.

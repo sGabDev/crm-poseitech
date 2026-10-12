@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check sessions.mjs && node --check store.mjs && node --check lock.mjs && node --check destination.mjs",
+    "check": "node --check server.mjs && node --check sessions.mjs && node --check inbox.mjs && node --check store.mjs && node --check lock.mjs && node --check destination.mjs",
     "test": "node tests.mjs",
     "setup": "node setup.mjs"
   },

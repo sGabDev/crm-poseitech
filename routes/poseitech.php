@@ -11,6 +11,7 @@ use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ResourceController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\WhatsAppController;
+use App\Http\Controllers\WhatsAppInboxController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect(auth()->check() ? '/dashboard' : '/login'));
@@ -44,6 +45,17 @@ Route::middleware(['auth', 'can:platform'])->group(function () {
     Route::post('/admin/settings', [AdminController::class, 'settings']);
 });
 Route::middleware(['auth', 'company'])->group(function () {
+    Route::get('/whatsapp/atendimento', [WhatsAppInboxController::class, 'index']);
+    Route::post('/whatsapp/atendimento/state', [WhatsAppInboxController::class, 'state'])->middleware('throttle:30,1');
+    Route::post('/whatsapp/atendimento/conversations', [WhatsAppInboxController::class, 'start'])->middleware('throttle:15,1');
+    Route::get('/whatsapp/atendimento/conversations/{id}/history', [WhatsAppInboxController::class, 'history'])->whereNumber('id');
+    Route::post('/whatsapp/atendimento/conversations/{id}/update', [WhatsAppInboxController::class, 'update'])->whereNumber('id');
+    Route::post('/whatsapp/atendimento/conversations/{id}/read', [WhatsAppInboxController::class, 'read'])->whereNumber('id')->middleware('throttle:30,1');
+    Route::post('/whatsapp/atendimento/conversations/{id}/send', [WhatsAppInboxController::class, 'send'])->whereNumber('id')->middleware('throttle:30,1');
+    Route::post('/whatsapp/atendimento/conversations/{id}/customer', [WhatsAppInboxController::class, 'customer'])->whereNumber('id');
+    Route::get('/whatsapp/atendimento/media/{id}', [WhatsAppInboxController::class, 'media'])->whereNumber('id')->middleware('throttle:30,1');
+    Route::post('/whatsapp/atendimento/replies', [WhatsAppInboxController::class, 'reply'])->middleware('throttle:15,1');
+    Route::post('/whatsapp/atendimento/replies/{id}/delete', [WhatsAppInboxController::class, 'deleteReply'])->whereNumber('id');
     Route::get('/whatsapp', [WhatsAppController::class, 'index']);
     Route::post('/whatsapp/{id}/name', [WhatsAppController::class, 'rename'])->whereNumber('id')->middleware('throttle:10,1');
     Route::post('/whatsapp', [WhatsAppController::class, 'create'])->middleware('throttle:10,1');
