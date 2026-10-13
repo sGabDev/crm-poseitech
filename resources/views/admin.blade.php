@@ -7,6 +7,7 @@
 <p>Empresas, assinaturas, planos e suporte.</p>
 </div>
 </div>
+<div class="actions separated"><a class="button" href="{{ url('/admin/tickets') }}">Central de chamados das empresas</a></div>
 <div class="kpi-grid">@foreach($counts as $label=>$count)<div class="kpi">
 <span>{{ $label }}</span>
 <strong>{{ $count }}</strong>

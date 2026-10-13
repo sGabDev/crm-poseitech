@@ -1,16 +1,12 @@
 @extends('layout')
 @section('title','Configurações')
-@section('content')<div class="page-heading">
-<div>
-<h1>Configurações</h1>
-<p>Adapte o PoseiTech à sua operação.</p>
-</div>
-<span class="badge">Plano {{ $company->plan->name }}</span>
-</div>
-<section class="card"><h2>Minha senha</h2>@include('components.password-form')</section>
-@include('components.modules')
-@include('components.catalog-settings')
-@include('components.mercadopago-settings')
+@section('content')
+<link rel="stylesheet" href="{{ asset('assets/settings-support.css') }}?v={{ filemtime(public_path('assets/settings-support.css')) }}">
+<div class="page-heading"><div><span class="eyebrow">SUA EMPRESA, DO SEU JEITO</span><h1>Configurações</h1><p>Encontre o que precisa e ajuste cada área com facilidade.</p></div><a class="button secondary" href="{{ url('/support') }}">Falar com o suporte</a></div>
+<div class="settings-shell"><nav class="settings-nav" aria-label="Seções das configurações">
+@foreach(['company'=>'Dados da empresa','modules'=>'Módulos da empresa','integrations'=>'Integrações e Mercado Pago','mail'=>'Fila de e-mails','team'=>'Equipe e permissões','automation'=>'Catálogo e automações','security'=>'Minha senha','activity'=>'Auditoria'] as $key=>$label)<a href="{{ url('/settings?tab='.$key) }}" class="{{ $tab===$key ? 'active' : '' }}" @if($tab===$key)aria-current="page"@endif>{{ $label }}</a>@endforeach
+</nav><div class="settings-content"><div class="settings-intro"><div><strong>{{ $company->name }}</strong><p>Plano {{ $company->plan->name }}</p></div><a href="{{ url('/support/new') }}">Precisa de ajuda?</a></div>
+@if($tab==='company')
 <details class="card" open>
 <summary>Dados da empresa</summary>
 <form method="post" enctype="multipart/form-data" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="company">@foreach(['name'=>'Nome fantasia','legal_name'=>'Razão social','document'=>'CPF/CNPJ','phone'=>'Telefone','whatsapp'=>'WhatsApp com DDI','email'=>'E-mail','address'=>'Endereço'] as $key=>$label)<label>{{ $label }}<input name="{{ $key }}" value="{{ old($key,$company->$key) }}" @required($key==='name') type="{{ $key==='email' ? 'email' : 'text' }}">
@@ -24,7 +20,11 @@
 <button>Salvar dados</button>
 </div>
 </form>
-</details>
+</details><div class="settings-feature-grid"><a class="settings-feature" href="{{ url('/settings?tab=modules') }}"><strong>WhatsApp e modelos de mensagem</strong><p>Ative ferramentas e personalize a comunicação.</p></a><a class="settings-feature" href="{{ url('/settings?tab=integrations') }}"><strong>Integrações</strong><p>Configure Mercado Pago e envio de e-mails.</p></a></div>
+@elseif($tab==='modules')
+@include('components.modules')
+@elseif($tab==='integrations')
+@include('components.mercadopago-settings')
 <details class="card">
 <summary>Integração de e-mail (SMTP)</summary>
 <p class="muted">Gmail: servidor smtp.gmail.com, usuário com o e-mail completo e senha de aplicativo. Use porta 587 (STARTTLS) ou 465 (SSL/TLS). O remetente deve ser a própria conta ou um endereço autorizado nela. A senha pode ser colada com espaços.</p>
@@ -41,8 +41,19 @@
 </div>
 </form>
 <form method="post" action="{{ url('/settings/mail') }}" class="separated">@csrf<input type="hidden" name="action" value="test"><button class="secondary">Testar conexão SMTP salva</button></form>
-</details>
+</details><section class="card"><h2>Atendimento e mensagens</h2><p class="muted">Ative WhatsApp e modelos na seção Módulos da empresa.</p><div class="actions"><a class="button secondary" href="{{ url('/settings?tab=modules') }}">Configurar ferramentas</a>@if($company->enabled('whatsapp'))<a href="{{ url('/whatsapp') }}">Conexão do WhatsApp</a>@endif @if($company->enabled('message_templates'))<a href="{{ url('/message-templates') }}">Gerenciar modelos de mensagem</a>@endif</div></section>
+@elseif($tab==='mail')
 @include('components.mail-queue')
+@elseif($tab==='team')
+<section class="card">
+<h2>Equipe e permissões</h2>
+<p class="muted">{{ $staff->count() }} de {{ $company->plan->users_limit }} usuários no plano.</p>@foreach($staff as $person)<details class="separated">
+<summary>{{ $person->name }} · {{ $person->email }} · {{ $person->active ? 'Ativo' : 'Inativo' }}</summary>@include('components.staff-form',['person'=>$person])
+@include('components.staff-actions')
+</details>@endforeach<details class="separated">
+<summary>+ Adicionar usuário</summary>@include('components.staff-form',['person'=>null])</details>
+</section>@elseif($tab==='automation')
+@include('components.catalog-settings')
 <details class="card">
 <summary>Fidelidade e automações</summary>
 <form method="post" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="loyalty">
@@ -58,15 +69,9 @@
 <input type="checkbox" name="birthday_automation" value="1" @checked($company->settings['birthday_automation'] ?? false)>Preparar rascunho diário para aniversariantes</label>
 <button>Salvar programa</button>
 </form>
-</details>
-<section class="card">
-<h2>Equipe e permissões</h2>
-<p class="muted">{{ $staff->count() }} de {{ $company->plan->users_limit }} usuários no plano.</p>@foreach($staff as $person)<details class="separated">
-<summary>{{ $person->name }} · {{ $person->email }} · {{ $person->active ? 'Ativo' : 'Inativo' }}</summary>@include('components.staff-form',['person'=>$person])
-@include('components.staff-actions')
-</details>@endforeach<details class="separated">
-<summary>+ Adicionar usuário</summary>@include('components.staff-form',['person'=>null])</details>
-</section>
+</details>@elseif($tab==='security')
+<section class="card"><h2>Minha senha</h2>@include('components.password-form')</section>
+@elseif($tab==='activity')
 <section class="card">
 <h2>Auditoria</h2>
 <div class="table-wrap">
@@ -88,4 +93,6 @@
 <td>{{ $log->ip }}</td>
 </tr>@endforeach</tbody>
 </table>
-</div>{{ $audit->links() }}</section>@endsection
+</div>{{ $audit->withQueryString()->links() }}</section>@endif
+</div></div>
+@endsection

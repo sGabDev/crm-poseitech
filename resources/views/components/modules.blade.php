@@ -1,18 +1,8 @@
-<section class="card">
-<h2>Módulos da empresa</h2>
-<p class="muted">Somente o suporte pode alterar os módulos. Consulte abaixo os módulos ativos.</p>
-<p class="muted">O módulo Caixa é obrigatório quando Vendas está ativo.</p>
-@if($company->enabled('whatsapp') || $company->enabled('message_templates'))<div class="actions">
-@if($company->enabled('whatsapp'))<a class="button secondary" href="{{ url('/whatsapp') }}">Conexão do WhatsApp</a>@endif
-@if($company->enabled('message_templates') && auth()->user()->allows('message_templates'))<a class="button secondary" href="{{ url('/message-templates') }}">Gerenciar modelos de mensagem</a>@endif
-</div>@endif
-@can('platform')
-<form method="post" action="{{ url('/settings') }}" class="stack">@csrf<input type="hidden" name="section" value="modules">
-@endcan
-<div class="module-grid">@foreach(config('poseitech.modules') as $key=>$label)<label class="check">
-<input type="checkbox" name="modules[]" value="{{ $key }}" @checked($company->enabled($key)) @disabled(!auth()->user()->can('platform'))>{{ $label }}</label>@endforeach</div>
-@can('platform')
-<button>Salvar módulos</button>
-</form>
-@endcan
-</section>
+<section class="card"><h2>Conexões e mensagens</h2><p class="muted">Ative ou desative estas ferramentas. Históricos, modelos e sessões existentes são preservados.</p>
+<form method="post" action="{{ url('/settings') }}">@csrf<input type="hidden" name="section" value="connections">
+<div class="settings-feature-grid">@foreach(['whatsapp'=>['Conexão do WhatsApp','Conecte o número da empresa e centralize os atendimentos.','/whatsapp'],'message_templates'=>['Gerenciar modelos de mensagem','Personalize comprovantes, cobranças e mensagens.','/message-templates']] as $key=>[$label,$description,$path])
+<div class="settings-feature"><label class="check"><input type="checkbox" name="integration_modules[]" value="{{ $key }}" @checked(in_array($key,old('integration_modules',$company->modules ?? [])))><strong>{{ $label }}</strong></label><p>{{ $description }}</p>@if($company->enabled($key) && auth()->user()->allows($key))<a href="{{ url($path) }}">Abrir ferramenta</a>@else<small>Ative e salve para disponibilizar.</small>@endif</div>@endforeach</div><button>Salvar conexões e mensagens</button></form></section>
+<section class="card"><h2>Módulos da empresa</h2><p class="muted">Os demais módulos são gerenciados pelo suporte. Caixa é obrigatório quando Vendas está ativo.</p>
+@can('platform')<form method="post" action="{{ url('/settings') }}">@csrf<input type="hidden" name="section" value="modules">@endcan
+<div class="module-grid">@foreach(config('poseitech.modules') as $key=>$label)@continue(!auth()->user()->can('platform') && in_array($key,['whatsapp','message_templates']))<label class="check"><input type="checkbox" name="modules[]" value="{{ $key }}" @checked($company->enabled($key)) @disabled(!auth()->user()->can('platform'))>{{ $label }}</label>@endforeach</div>
+@can('platform')<button>Salvar módulos</button></form>@else<a href="{{ url('/support/new') }}">Solicitar alteração ao suporte</a>@endcan</section>

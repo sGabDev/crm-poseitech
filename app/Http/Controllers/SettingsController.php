@@ -19,14 +19,17 @@ class SettingsController extends Controller
 {
     public function __construct(private Tenant $t) {}
 
-    public function index()
+    public function index(Request $r)
     {
         if (! Gate::allows('manage-company')) {
             return view('password-settings');
         }
         Gate::authorize('manage-company');
 
-        return view('settings', ['mailQueue' => $this->t->query('email_logs')->whereIn('status', ['pending', 'failed', 'sending'])->orderBy('id')->paginate(20, ['*'], 'mail_page'), 'staff' => User::where('company_id', $this->t->id())->whereNull('deleted_at')->get(), 'smtp' => $this->t->company->smtp ?? [], 'audit' => $this->t->query('audit_logs')->orderByDesc('id')->paginate(15)]);
+        $r->validate(['tab' => ['nullable', Rule::in(['company', 'modules', 'integrations', 'mail', 'team', 'automation', 'security', 'activity'])]]);
+        $tab = $r->input('tab', 'company');
+
+        return view('settings', ['tab' => $tab, 'mailQueue' => $this->t->query('email_logs')->whereIn('status', ['pending', 'failed', 'sending'])->orderBy('id')->paginate(20, ['*'], 'mail_page'), 'staff' => User::where('company_id', $this->t->id())->whereNull('deleted_at')->get(), 'smtp' => $this->t->company->smtp ?? [], 'audit' => $this->t->query('audit_logs')->orderByDesc('id')->paginate(15)]);
     }
 
     public function save(Request $r)
@@ -45,6 +48,15 @@ class SettingsController extends Controller
                 unset($d['logo']);
             }
             $company->update($d);
+        } elseif ($section === 'connections') {
+            $r->validate(['integration_modules' => 'nullable|array', 'integration_modules.*' => ['string', Rule::in(['whatsapp', 'message_templates'])]]);
+            DB::transaction(function () use ($company, $r) {
+                $locked = $company->newQuery()->whereKey($company->id)->lockForUpdate()->firstOrFail();
+                $before = $locked->modules ?? [];
+                $modules = array_values(array_unique(array_merge(array_diff($before, ['whatsapp', 'message_templates']), $r->input('integration_modules', []))));
+                $locked->update(['modules' => $modules]);
+                $this->t->audit('company.integrations_updated', 'companies', $company->id, ['modules' => $before], ['modules' => $modules]);
+            }, 3);
         } elseif ($section === 'modules') {
             Gate::authorize('platform');
             $r->validate(['modules' => 'nullable|array', 'modules.*' => ['string', Rule::in(array_keys(config('poseitech.modules')))]]);

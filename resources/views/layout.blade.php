@@ -55,10 +55,11 @@
 @if($company->enabled('whatsapp'))<a class="{{ request()->is('whatsapp') ? 'active' : '' }}" href="{{ url('/whatsapp') }}">Conexão do WhatsApp</a>@endif
 <a href="{{ url('/alerts') }}">Notificações</a>
 @endcan
+<a class="{{ request()->is('support*') ? 'active' : '' }}" href="{{ url('/support') }}">Suporte técnico</a>
 <a href="{{ url('/settings') }}">Configurações</a>
 @if($company->enabled('message_templates') && auth()->user()->allows('message_templates'))<a class="{{ request()->is('message-templates*') ? 'active' : '' }}" href="{{ url('/message-templates') }}">Modelos de mensagem</a>@endif
 @endif
-@can('platform')<a href="{{ url('/admin') }}">Super Admin PoseiTech</a>@endcan
+@can('platform')<a class="{{ request()->is('admin/tickets*') ? 'active' : '' }}" href="{{ url('/admin/tickets') }}">Central de chamados</a><a href="{{ url('/admin') }}">Super Admin PoseiTech</a>@endcan
 </nav>
 <div class="sidebar-bottom">
 <span class="avatar">{{ mb_substr(auth()->user()->name,0,1) }}</span>

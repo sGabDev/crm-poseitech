@@ -7,13 +7,16 @@ use App\Http\Controllers\BusinessController;
 use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\CatalogController;
 use App\Http\Controllers\CouponController;
+use App\Http\Controllers\CustomerMergeController;
 use App\Http\Controllers\MercadoPagoController;
 use App\Http\Controllers\MessageTemplateController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ResourceController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\WhatsAppController;
 use App\Http\Controllers\WhatsAppInboxController;
+use App\Http\Middleware\SupportAccess;
 use App\Http\Middleware\WhatsAppModule;
 use Illuminate\Support\Facades\Route;
 
@@ -42,12 +45,24 @@ Route::get('/catalog/{slug}', [PortalController::class, 'catalog']);
 Route::get('/media/{companyId}/{productId}', [PortalController::class, 'image'])->whereNumber(['companyId', 'productId']);
 Route::get('/logo/{companyId}', [PortalController::class, 'logo'])->whereNumber('companyId');
 Route::middleware(['auth', 'can:platform'])->group(function () {
+    Route::get('/admin/tickets', [SupportTicketController::class, 'index']);
+    Route::get('/admin/tickets/{id}', [SupportTicketController::class, 'show'])->whereNumber('id');
+    Route::post('/admin/tickets/{id}/reply', [SupportTicketController::class, 'reply'])->whereNumber('id')->middleware('throttle:30,1');
+    Route::post('/admin/tickets/{id}/status', [SupportTicketController::class, 'update'])->whereNumber('id')->middleware('throttle:20,1');
     Route::get('/admin', [AdminController::class, 'index']);
     Route::post('/admin/companies/{id?}', [AdminController::class, 'company']);
     Route::post('/admin/plans/{id?}', [AdminController::class, 'plan']);
     Route::post('/admin/support/{id}', [AdminController::class, 'support']);
     Route::post('/admin/leave', [AdminController::class, 'leave']);
     Route::post('/admin/settings', [AdminController::class, 'settings']);
+});
+Route::middleware(['auth', SupportAccess::class])->group(function () {
+    Route::get('/support', [SupportTicketController::class, 'index']);
+    Route::get('/support/new', [SupportTicketController::class, 'create']);
+    Route::post('/support', [SupportTicketController::class, 'store'])->middleware('throttle:5,1');
+    Route::get('/support/{id}', [SupportTicketController::class, 'show'])->whereNumber('id');
+    Route::post('/support/{id}/reply', [SupportTicketController::class, 'reply'])->whereNumber('id')->middleware('throttle:30,1');
+    Route::post('/support/{id}/status', [SupportTicketController::class, 'update'])->whereNumber('id')->middleware('throttle:20,1');
 });
 Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/settings/mercadopago', [MercadoPagoController::class, 'settings'])->middleware('throttle:10,1');
@@ -94,6 +109,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/records/{resource}/{id}/delete', [ResourceController::class, 'destroy'])->whereNumber('id');
     Route::post('/customers/{id}/debt-payment', [BusinessController::class, 'receiveDebt'])->whereNumber('id');
     Route::post('/records/{resource}/{id?}', [ResourceController::class, 'save'])->whereNumber('id');
+    Route::get('/customers/{id}/merge', [CustomerMergeController::class, 'index'])->whereNumber('id');
+    Route::post('/customers/{id}/merge', [CustomerMergeController::class, 'store'])->whereNumber('id')->middleware('throttle:10,1');
     Route::get('/customers/{id}', [ResourceController::class, 'customer'])->whereNumber('id');
     Route::post('/customers/{id}/privacy', [ResourceController::class, 'privacy'])->whereNumber('id');
     Route::post('/customers/{id}/portal', [PortalController::class, 'issue'])->whereNumber('id');

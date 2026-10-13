@@ -1,0 +1,147 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Services\Tenant;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+
+class SupportTicketController extends Controller
+{
+    public const CATEGORIES = ['technical' => 'Problema técnico', 'whatsapp' => 'WhatsApp', 'payments' => 'Vendas e pagamentos', 'access' => 'Acesso e permissões', 'suggestion' => 'Sugestão', 'other' => 'Outro assunto'];
+
+    public const PRIORITIES = ['low' => 'Baixa', 'normal' => 'Normal', 'high' => 'Alta', 'urgent' => 'Urgente'];
+
+    public const STATUSES = ['waiting_support' => 'Aguardando suporte', 'in_progress' => 'Em atendimento', 'waiting_company' => 'Aguardando empresa', 'resolved' => 'Resolvido', 'closed' => 'Encerrado'];
+
+    public function __construct(private Tenant $t) {}
+
+    private function platform(Request $r): bool
+    {
+        $platform = $r->is('admin/tickets', 'admin/tickets/*');
+        if ($platform) {
+            Gate::authorize('platform');
+        }
+
+        return $platform;
+    }
+
+    private function query(bool $platform)
+    {
+        return DB::table('support_tickets')->when(! $platform, fn ($q) => $q->where('support_tickets.company_id', $this->t->id()));
+    }
+
+    public function index(Request $r)
+    {
+        $platform = $this->platform($r);
+        $r->validate(['status' => ['nullable', Rule::in(array_keys(self::STATUSES))], 'q' => 'nullable|string|max:100', 'priority' => ['nullable', Rule::in(array_keys(self::PRIORITIES))]]);
+        $base = $platform ? '/admin/tickets' : '/support';
+        $counts = (clone $this->query($platform))->selectRaw('status, COUNT(*) as total')->groupBy('status')->pluck('total', 'status');
+        $query = $this->query($platform)->join('companies', 'companies.id', '=', 'support_tickets.company_id');
+        if ($r->filled('status')) {
+            $query->where('support_tickets.status', $r->input('status'));
+        }
+        if ($r->filled('priority')) {
+            $query->where('support_tickets.priority', $r->input('priority'));
+        }
+        if ($r->filled('q')) {
+            $term = '%'.$r->input('q').'%';
+            $query->where(fn ($q) => $q->where('support_tickets.subject', 'like', $term)->orWhere('support_tickets.id', (int) $r->input('q'))->when($platform, fn ($q) => $q->orWhere('companies.name', 'like', $term)));
+        }
+        $tickets = $query->select('support_tickets.*', 'companies.name as company_name')->orderByDesc($platform ? 'support_unread' : 'company_unread')->orderByDesc('support_tickets.updated_at')->paginate(20)->withQueryString();
+
+        return view('support-index', compact('platform', 'base', 'tickets', 'counts'));
+    }
+
+    public function create(Request $r)
+    {
+        return view('support-create');
+    }
+
+    public function store(Request $r)
+    {
+        $d = $r->validate(['subject' => 'required|string|min:5|max:160', 'body' => 'required|string|min:10|max:8000', 'category' => ['required', Rule::in(array_keys(self::CATEGORIES))], 'priority' => ['required', Rule::in(array_keys(self::PRIORITIES))], 'request_key' => 'required|uuid']);
+        $id = DB::transaction(function () use ($d) {
+            $this->t->lock();
+            if ($existing = $this->query(false)->where('request_key', $d['request_key'])->first()) {
+                return $existing->id;
+            }
+            $id = DB::table('support_tickets')->insertGetId(['company_id' => $this->t->id(), 'user_id' => auth()->id(), 'subject' => $d['subject'], 'category' => $d['category'], 'priority' => $d['priority'], 'request_key' => $d['request_key'], 'created_at' => now(), 'updated_at' => now()]);
+            $this->message($id, $d['body'], 'company');
+            $this->t->audit('ticket.created', 'support_tickets', $id);
+
+            return $id;
+        }, 3);
+
+        return redirect('/support/'.$id)->with('success', 'Chamado aberto. O suporte receberá sua solicitação no painel de atendimento.');
+    }
+
+    public function show(Request $r, int $id)
+    {
+        $platform = $this->platform($r);
+        $ticket = $this->query($platform)->join('companies', 'companies.id', '=', 'support_tickets.company_id')->select('support_tickets.*', 'companies.name as company_name')->where('support_tickets.id', $id)->firstOrFail();
+        $this->query($platform)->where('id', $id)->update([$platform ? 'support_unread' : 'company_unread' => false]);
+        $messages = DB::table('support_messages')->where('ticket_id', $id)->orderByDesc('id')->paginate(30)->withQueryString();
+        $base = $platform ? '/admin/tickets' : '/support';
+
+        return view('support-show', compact('platform', 'ticket', 'messages', 'base'));
+    }
+
+    public function reply(Request $r, int $id)
+    {
+        $platform = $this->platform($r);
+        $d = $r->validate(['body' => 'required|string|min:1|max:8000', 'request_key' => 'required|uuid']);
+        DB::transaction(function () use ($d, $id, $platform) {
+            $ticket = $this->query($platform)->where('id', $id)->lockForUpdate()->firstOrFail();
+            if (DB::table('support_messages')->where('request_key', $d['request_key'])->where('ticket_id', $id)->exists()) {
+                return;
+            }
+            if ($ticket->status === 'closed') {
+                throw ValidationException::withMessages(['body' => 'Reabra o chamado antes de responder.']);
+            }
+            $messageId = $this->message($id, $d['body'], $platform ? 'support' : 'company', $d['request_key']);
+            $this->query($platform)->where('id', $id)->update(['status' => $platform ? 'waiting_company' : 'waiting_support', 'company_unread' => $platform, 'support_unread' => ! $platform, 'updated_at' => now()]);
+            $this->notify($ticket, $platform, $messageId, 'Nova resposta no chamado #'.$id);
+        }, 3);
+
+        return back()->with('success', 'Resposta adicionada ao chamado.');
+    }
+
+    public function update(Request $r, int $id)
+    {
+        $platform = $this->platform($r);
+        $d = $r->validate(['status' => ['required', Rule::in($platform ? array_keys(self::STATUSES) : ['waiting_support', 'resolved', 'closed'])], 'assign' => 'nullable|boolean']);
+        DB::transaction(function () use ($d, $id, $platform, $r) {
+            $ticket = $this->query($platform)->where('id', $id)->lockForUpdate()->firstOrFail();
+            $data = ['status' => $d['status'], 'company_unread' => $platform, 'support_unread' => ! $platform, 'updated_at' => now()];
+            if ($platform && $r->boolean('assign')) {
+                $data['assigned_to'] = auth()->id();
+            }
+            if ($ticket->status === $d['status'] && (! isset($data['assigned_to']) || $ticket->assigned_to === auth()->id())) {
+                return;
+            }
+            $this->query($platform)->where('id', $id)->update($data);
+            $body = ($platform ? 'Suporte' : 'Empresa').' alterou o status para “'.self::STATUSES[$d['status']].'”.'.(isset($data['assigned_to']) ? ' Atendimento assumido por '.auth()->user()->name.'.' : '');
+            $messageId = $this->message($id, $body, 'system');
+            $this->notify($ticket, $platform, $messageId, 'Atualização no chamado #'.$id);
+        }, 3);
+
+        return back()->with('success', 'Chamado atualizado.');
+    }
+
+    private function message(int $id, string $body, string $role, ?string $key = null): int
+    {
+        return DB::table('support_messages')->insertGetId(['ticket_id' => $id, 'user_id' => auth()->id(), 'author_name' => auth()->user()->name, 'author_role' => $role, 'body' => $body, 'request_key' => $key, 'created_at' => now(), 'updated_at' => now()]);
+    }
+
+    private function notify(object $ticket, bool $platform, int $messageId, string $title): void
+    {
+        if ($platform) {
+            DB::table('alerts')->insertOrIgnore(['company_id' => $ticket->company_id, 'key' => 'support-message-'.$messageId, 'title' => $title, 'body' => $ticket->subject, 'url' => '/support/'.$ticket->id, 'created_at' => now(), 'updated_at' => now()]);
+        }
+        DB::table('audit_logs')->insert(['company_id' => $ticket->company_id, 'user_id' => auth()->id(), 'action' => $platform ? 'ticket.support_updated' : 'ticket.company_updated', 'entity' => 'support_tickets', 'entity_id' => $ticket->id, 'ip' => request()->ip(), 'created_at' => now(), 'updated_at' => now()]);
+    }
+}

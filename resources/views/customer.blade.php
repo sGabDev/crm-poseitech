@@ -6,7 +6,8 @@
 <h1>{{ $customer->name }}</h1>
 <p>{{ $customer->email }} · {{ $customer->phone }}</p>
 </div>
-<a class="button secondary" href="{{ url('/records/customers/'.$customer->id.'/edit') }}">Editar cadastro</a>
+<div class="actions"><a class="button secondary" href="{{ url('/records/customers/'.$customer->id.'/edit') }}">Editar cadastro</a>
+@can('manage-company')@if(auth()->user()->allows('customers',true) && !$customer->anonymized_at)<a class="button secondary" href="{{ url('/customers/'.$customer->id.'/merge') }}">Unir cliente duplicado</a>@endif @endcan</div>
 </div>
 <div class="actions">@if($stats->count>=2)<span class="badge">Recorrente</span>@else<span class="badge">Novo</span>@endif @if($stats->total>=100000)<span class="badge">VIP</span>@endif @if($stats->last && \Carbon\Carbon::parse($stats->last)->lt(now()->subDays(30)))<span class="badge danger">Inativo</span>@endif @if($accounts->where('status','pending')->where('due_date','<',now()->toDateString())->isNotEmpty())<span class="badge danger">Inadimplente</span>@endif</div>
 <br>
