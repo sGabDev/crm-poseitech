@@ -59,3 +59,48 @@ body:not(.inbox-page) .wa-bot{padding:0}
 @media(max-width:520px){body:not(.inbox-page) .breadcrumb{display:none}body:not(.inbox-page) .global-search{width:auto;flex:1}body:not(.inbox-page) .card{padding:17px}body:not(.inbox-page) .kpi{padding:16px}body:not(.inbox-page) .kpi strong{font-size:23px}.page-heading .actions{width:100%}.sale-completed .button{width:100%;margin-left:0}body:not(.inbox-page) .filters label{flex:1 1 140px}}
 @media(prefers-reduced-motion:reduce){body:not(.inbox-page) .sidebar{transition:none}}
 @media print{.nav-backdrop,.sale-completed .button{display:none!important}body:not(.inbox-page) .app{margin-left:0}body:not(.inbox-page) .app>main{padding:0;min-height:0}}
+
+/* Shared content primitives: keep widths and spacing consistent across modules. */
+.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+body:not(.inbox-page) .app{min-width:0}
+body:not(.inbox-page) .app>main>*{min-width:0;max-width:100%}
+body:not(.inbox-page) .page-heading>div{min-width:0}
+body:not(.inbox-page) .page-heading h1{line-height:1.25;overflow-wrap:anywhere;margin:0 0 7px;font-size:clamp(23px,2.2vw,29px)}
+body:not(.inbox-page) .page-heading p{margin:0;color:#637080;max-width:70ch}
+body:not(.inbox-page) .eyebrow{font-size:10px;font-weight:600;letter-spacing:.08em;margin-bottom:7px;color:#718075}
+body:not(.inbox-page) .section-heading{gap:12px;align-items:center}
+body:not(.inbox-page) .section-heading h2{margin:0;line-height:1.4}
+body:not(.inbox-page) .card>h2:first-child{margin-top:0}
+body:not(.inbox-page) .card>p:last-child{margin-bottom:0}
+body:not(.inbox-page) .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+body:not(.inbox-page) .actions>form{margin:0;max-width:100%}
+body:not(.inbox-page) .actions :is(button,.button,.record-action){white-space:normal;text-align:center}
+body:not(.inbox-page) .filters{align-items:end;margin-bottom:20px}
+body:not(.inbox-page) .filters label{min-width:0;flex:1 1 150px;max-width:300px}
+body:not(.inbox-page) .filters :is(button,.button){min-height:42px}
+body:not(.inbox-page) .form-grid{gap:18px 20px}
+body:not(.inbox-page) .form-grid>.full{grid-column:1/-1}
+body:not(.inbox-page) label>small{font-weight:400;line-height:1.5;color:#637080}
+body:not(.inbox-page) :is(input,select,textarea){max-width:100%}
+body:not(.inbox-page) :is(input,select):not([type=checkbox]):not([type=radio]):not([type=hidden]){min-height:42px}
+body:not(.inbox-page) input:is([type=checkbox],[type=radio]){flex-shrink:0}
+body:not(.inbox-page) input[type=file]{padding:8px;font-size:12px}
+body:not(.inbox-page) input[type=file]::file-selector-button{padding:6px 10px;margin-right:10px;border:1px solid #dbe1e7;border-radius:5px;background:#f4f7f5;color:#263c31;font:inherit;cursor:pointer}
+body:not(.inbox-page) :is(button,.button):disabled{cursor:not-allowed}
+body:not(.inbox-page) .table-wrap{width:100%;min-width:0;max-width:100%;overflow:auto;overscroll-behavior-x:contain;scrollbar-width:thin}
+body:not(.inbox-page) .table-wrap table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+body:not(.inbox-page) :is(th,td){vertical-align:middle}
+body:not(.inbox-page) td .actions{gap:7px;min-width:100px}
+body:not(.inbox-page) td .actions :is(button,.button,.record-action){padding:7px 10px;font-size:12px;min-height:32px}
+body:not(.inbox-page) .pagination{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin:18px 0 0;font-size:12px}
+body:not(.inbox-page) .pagination>span{margin-right:auto;color:#637080}
+body:not(.inbox-page) .pagination .button{font-size:12px;padding:8px 12px}
+body:not(.inbox-page) :is(.kpi strong,.metric-row strong){font-variant-numeric:tabular-nums}
+body:not(.inbox-page) .list-detail{grid-template-columns:minmax(90px,130px) minmax(0,1fr);font-size:13px}
+body:not(.inbox-page) .list-detail dd{overflow-wrap:anywhere}
+body:not(.inbox-page) .sidebar nav{scrollbar-width:thin;scrollbar-color:#dfe6e1 transparent}
+body:not(.inbox-page) .workspace strong,body:not(.inbox-page) .sidebar-bottom strong{line-height:1.5}
+body:not(.inbox-page) .support-banner{flex-wrap:wrap;gap:8px}
+@media(max-width:1000px){body:not(.inbox-page) .form-grid{gap:16px}body:not(.inbox-page) .topbar{gap:12px}body:not(.inbox-page) .global-search{max-width:100%}}
+@media(max-width:600px){body:not(.inbox-page) .app>main{padding:18px 12px 28px}body:not(.inbox-page) .page-heading{margin-bottom:18px}body:not(.inbox-page) .page-heading>.button{min-height:40px}body:not(.inbox-page) .form-grid{grid-template-columns:minmax(0,1fr)}body:not(.inbox-page) .filters{padding:12px}body:not(.inbox-page) .filters label{max-width:none;flex-basis:130px}body:not(.inbox-page) .table-wrap table{min-width:520px}body:not(.inbox-page) .table-wrap .statement-table{min-width:460px}body:not(.inbox-page) td{padding:12px}body:not(.inbox-page) .pagination{gap:8px}body:not(.inbox-page) .pagination>span{flex-basis:100%}body:not(.inbox-page) .module-grid,body:not(.inbox-page) .permission-grid{grid-template-columns:minmax(0,1fr)}}
+@media print{.ticket-workspace{height:auto!important;display:block!important}.ticket-workspace>.support-chat{overflow:visible!important;height:auto!important}.ticket-controls,.ticket-composer{display:none!important}body:not(.inbox-page) .table-wrap{overflow:visible}body:not(.inbox-page) .table-wrap table{min-width:0}}

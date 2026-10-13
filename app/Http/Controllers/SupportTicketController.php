@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -173,14 +174,18 @@ class SupportTicketController extends Controller
     public function reply(Request $r, int $id)
     {
         $platform = $this->platform($r);
-        $d = $r->validate(['body' => 'nullable|required_without:attachments|string|min:1|max:8000', 'request_key' => 'required|uuid'] + $this->fileRules());
+        $validator = Validator::make($r->all(), ['body' => 'nullable|required_without:attachments|string|min:1|max:8000', 'request_key' => 'required|uuid'] + $this->fileRules());
+        if ($validator->fails()) {
+            throw (new ValidationException($validator))->redirectTo(($platform ? '/admin/tickets/' : '/support/').$id);
+        }
+        $d = $validator->validated();
         $this->transaction(function () use ($d, $id, $platform, $r) {
             $ticket = $this->query($platform)->where('id', $id)->lockForUpdate()->firstOrFail();
             if (DB::table('support_messages')->where('request_key', $d['request_key'])->where('ticket_id', $id)->exists()) {
                 return;
             }
             if ($ticket->status === 'closed') {
-                throw ValidationException::withMessages(['body' => 'Reabra o chamado antes de responder.']);
+                throw ValidationException::withMessages(['body' => 'Reabra o chamado antes de responder.'])->redirectTo(($platform ? '/admin/tickets/' : '/support/').$id);
             }
             $messageId = $this->message($id, $d['body'] ?? '', $platform ? 'support' : 'company', $d['request_key']);
             $this->attach($r, $messageId);
@@ -188,13 +193,17 @@ class SupportTicketController extends Controller
             $this->notify($ticket, $platform, $messageId, 'Nova resposta no chamado #'.$id);
         });
 
-        return back()->with('success', 'Resposta adicionada ao chamado.');
+        return redirect(($platform ? '/admin/tickets/' : '/support/').$id)->with('success', 'Resposta adicionada ao chamado.');
     }
 
     public function update(Request $r, int $id)
     {
         $platform = $this->platform($r);
-        $d = $r->validate(['status' => ['required', Rule::in($platform ? array_keys(self::STATUSES) : ['waiting_support', 'resolved', 'closed'])], 'assign' => 'nullable|boolean']);
+        $validator = Validator::make($r->all(), ['status' => ['required', Rule::in($platform ? array_keys(self::STATUSES) : ['waiting_support', 'resolved', 'closed'])], 'assign' => 'nullable|boolean']);
+        if ($validator->fails()) {
+            throw (new ValidationException($validator))->redirectTo(($platform ? '/admin/tickets/' : '/support/').$id);
+        }
+        $d = $validator->validated();
         DB::transaction(function () use ($d, $id, $platform, $r) {
             $ticket = $this->query($platform)->where('id', $id)->lockForUpdate()->firstOrFail();
             $data = ['status' => $d['status'], 'company_unread' => $platform, 'support_unread' => ! $platform, 'updated_at' => now()];
@@ -210,7 +219,7 @@ class SupportTicketController extends Controller
             $this->notify($ticket, $platform, $messageId, 'Atualização no chamado #'.$id);
         }, 3);
 
-        return back()->with('success', 'Chamado atualizado.');
+        return redirect(($platform ? '/admin/tickets/' : '/support/').$id)->with('success', 'Chamado atualizado.');
     }
 
     private function message(int $id, string $body, string $role, ?string $key = null): int

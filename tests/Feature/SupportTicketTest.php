@@ -160,4 +160,29 @@ class SupportTicketTest extends TestCase
         $this->assertDatabaseCount('support_attachments', 0);
         $this->assertDatabaseCount('support_messages', 1);
     }
+
+    public function test_status_and_reply_return_to_conversation_even_when_previous_page_is_json(): void
+    {
+        $id = $this->ticket();
+        $this->withSession(['_previous' => ['url' => url('/support/'.$id.'/history?after=1')]])
+            ->post('/support/'.$id.'/status', ['status' => 'resolved'])->assertRedirect('/support/'.$id);
+        $this->withSession(['_previous' => ['url' => url('/support/'.$id.'/history')]])
+            ->post('/support/'.$id.'/reply', ['body' => 'Ainda preciso de ajuda', 'request_key' => (string) Str::uuid()])->assertRedirect('/support/'.$id);
+        $this->withSession(['_previous' => ['url' => url('/support/'.$id.'/history')]])
+            ->post('/support/'.$id.'/status', ['status' => 'in_progress'])->assertRedirect('/support/'.$id)->assertSessionHasErrors('status');
+        $this->withSession(['_previous' => ['url' => url('/support/'.$id.'/history')]])
+            ->post('/support/'.$id.'/reply', ['request_key' => (string) Str::uuid()])->assertRedirect('/support/'.$id)->assertSessionHasErrors('body');
+        $super = User::factory()->create(['company_id' => null, 'role' => 'super', 'active' => true]);
+        $this->actingAs($super)->withSession(['_previous' => ['url' => url('/admin/tickets/'.$id.'/history')]])
+            ->post('/admin/tickets/'.$id.'/status', ['status' => 'in_progress'])->assertRedirect('/admin/tickets/'.$id);
+    }
+
+    public function test_ajax_history_does_not_replace_the_previous_page(): void
+    {
+        $id = $this->ticket();
+        $this->get('/support/'.$id)->assertOk();
+        $this->getJson('/support/'.$id.'/history?after=1', ['X-Requested-With' => 'XMLHttpRequest'])->assertOk();
+        $this->assertSame(url('/support/'.$id), session()->previousUrl());
+        $this->get('/support/'.$id)->assertOk()->assertSee('ticket-workspace')->assertSee('Detalhes e status')->assertDontSee('class="support-layout"', false);
+    }
 }

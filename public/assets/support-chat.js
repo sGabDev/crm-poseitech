@@ -20,7 +20,7 @@
         try {
             const url = new URL(viewport.dataset.history, window.location.href);
             url.searchParams.set(past ? 'before' : 'after', cursor);
-            const response = await fetch(url, {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
+            const response = await fetch(url, {headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest'}, credentials: 'same-origin'});
             if (!response.ok) throw new Error('unavailable');
             const data = await response.json();
             if (past) {
@@ -54,6 +54,25 @@
     window.setTimeout(poll, 15000);
     document.querySelectorAll('[data-file-input]').forEach(input => input.addEventListener('change', () => {
         const status = input.closest('label').querySelector('small');
-        status.textContent = input.files.length ? Array.from(input.files).map(file => file.name).join(', ') : 'Até 5 arquivos de 5 MB cada.';
+        status.textContent = input.files.length ? Array.from(input.files).map(file => file.name).join(', ') : '';
+        status.hidden = input.files.length === 0;
     }));
+    const draft = document.querySelector('[data-support-draft]');
+    const resizeDraft = () => {
+        if (!draft) return;
+        draft.style.height = 'auto';
+        draft.style.height = Math.min(draft.scrollHeight, 120) + 'px';
+    };
+    draft?.addEventListener('input', resizeDraft);
+    resizeDraft();
+    const controls = document.querySelector('.ticket-controls');
+    document.addEventListener('click', event => {
+        if (controls?.open && !controls.contains(event.target)) controls.open = false;
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && controls?.open) {
+            controls.open = false;
+            controls.querySelector('summary').focus();
+        }
+    });
 })();

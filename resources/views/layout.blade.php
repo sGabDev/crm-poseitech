@@ -11,7 +11,7 @@
 <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}" defer>
 </script>
 </head>
-<body class="{{ View::hasSection('immersive') ? 'inbox-page' : '' }}">
+<body class="{{ View::hasSection('immersive') ? 'inbox-page' : '' }} @yield('body-class')">
 @hasSection('immersive')
 <main class="inbox-fullscreen">@yield('content')</main>
 @else
