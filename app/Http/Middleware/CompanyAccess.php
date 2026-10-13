@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Services\Tenant;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 class CompanyAccess
@@ -24,7 +25,10 @@ class CompanyAccess
         view()->share('company', $company);
         view()->share('tenant', app(Tenant::class));
 
-        if (! Schema::hasTable('mp_checkouts') || ! Schema::hasColumn('companies', 'mercadopago') || ! Schema::hasTable('whatsapp_connections') || ! Schema::hasTable('whatsapp_messages') || ! Schema::hasColumn('coupons', 'product_id') || ! Schema::hasColumn('catalog_orders', 'visitor_hash') || ! Schema::hasTable('catalog_orders') || ! Schema::hasColumn('coupons', 'deleted_at') || ! Schema::hasTable('coupon_grants') || ! Schema::hasColumn('email_logs', 'sale_id') || ! Schema::hasColumn('products', 'deleted_at') || ! Schema::hasColumn('users', 'must_change_password') || ! Schema::hasColumn('users', 'deleted_at') || ! Schema::hasColumn('sales', 'wallet_used') || ! Schema::hasTable('wallet_entries') || ! Schema::hasTable('customer_deposits') || ! Schema::hasTable('flow_entries')) {
+        $checkSchema = fn () => ! Schema::hasTable('mp_checkouts') || ! Schema::hasColumn('companies', 'mercadopago') || ! Schema::hasTable('whatsapp_connections') || ! Schema::hasTable('whatsapp_messages') || ! Schema::hasColumn('coupons', 'product_id') || ! Schema::hasColumn('catalog_orders', 'visitor_hash') || ! Schema::hasTable('catalog_orders') || ! Schema::hasColumn('coupons', 'deleted_at') || ! Schema::hasTable('coupon_grants') || ! Schema::hasColumn('email_logs', 'sale_id') || ! Schema::hasColumn('products', 'deleted_at') || ! Schema::hasColumn('users', 'must_change_password') || ! Schema::hasColumn('users', 'deleted_at') || ! Schema::hasColumn('sales', 'wallet_used') || ! Schema::hasTable('wallet_entries') || ! Schema::hasTable('customer_deposits') || ! Schema::hasTable('flow_entries') || ! Schema::hasTable('support_attachments') || ! Schema::hasColumn('email_logs', 'next_attempt_at');
+        // Cache deployment checks locally instead of issuing dozens of metadata queries per page.
+        $pending = app()->runningUnitTests() ? $checkSchema() : Cache::store('file')->remember('crm.schema.000008.'.hash('sha256', (string) config('database.default').config('database.connections.'.config('database.default').'.database')), 60, $checkSchema);
+        if ($pending) {
             return response()->view('deployment-pending', ['public' => true], 503);
         }
 

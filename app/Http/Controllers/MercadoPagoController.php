@@ -58,8 +58,19 @@ class MercadoPagoController extends Controller
     {
         $this->authorizeAccount($this->t->find('accounts', $id), true);
         $checkout = $this->mp->create($id);
+        foreach (['email', 'whatsapp'] as $channel) {
+            try {
+                if ($channel === 'whatsapp') {
+                    $this->mp->queueWhatsApp($checkout);
+                } else {
+                    $this->mp->deliver($checkout, $channel);
+                }
+            } catch (ValidationException) {
+                // Missing customer contact or disabled channel is shown in the payment panel.
+            }
+        }
 
-        return redirect('/payments/mercadopago/'.$checkout->id)->with('success', 'Link de pagamento disponível.');
+        return redirect('/payments/mercadopago/'.$checkout->id)->with('success', 'Link disponível. Envios automáticos solicitados para os canais disponíveis.');
     }
 
     public function show(int $id)

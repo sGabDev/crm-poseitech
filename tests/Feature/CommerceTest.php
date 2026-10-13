@@ -172,7 +172,7 @@ class CommerceTest extends TestCase
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/reconnect'));
     }
 
-    public function test_whatsapp_buttons_redirect_to_html_and_receipts_send_without_scheduler(): void
+    public function test_whatsapp_buttons_redirect_to_html_and_sale_receipts_use_background_queue(): void
     {
         Http::fake(['*' => Http::response(['status' => 'sent'])]);
         Bus::fake([SendWhatsAppReceipt::class]);
@@ -181,7 +181,7 @@ class CommerceTest extends TestCase
         $bot = $t->insert('whatsapp_connections', ['name' => 'Vendas', 'automatic' => true]);
         $t->update('customers', $this->customer, ['phone' => '11999999999']);
         $this->post('/sales', $this->sale())->assertRedirect();
-        Bus::assertDispatchedAfterResponse(SendWhatsAppReceipt::class);
+        Bus::assertNotDispatchedAfterResponse(SendWhatsAppReceipt::class);
         $message = $t->query('whatsapp_messages')->first();
         (new SendWhatsAppReceipt($this->company->id, $message->id))->handle();
         $this->assertDatabaseHas('whatsapp_messages', ['id' => $message->id, 'status' => 'sent']);
@@ -255,6 +255,9 @@ class CommerceTest extends TestCase
         $this->assertDatabaseHas('whatsapp_messages', ['status' => 'pending', 'attempts' => 1]);
         $this->assertDatabaseCount('sales', 1);
         $this->artisan('poseitech:whatsapp')->assertSuccessful();
+        Http::assertSentCount(1);
+        $this->travel(61)->seconds();
+        $this->artisan('poseitech:whatsapp')->assertSuccessful();
         $this->assertDatabaseHas('whatsapp_messages', ['status' => 'unknown']);
         $this->artisan('poseitech:whatsapp')->assertSuccessful();
         Http::assertSentCount(2);
@@ -274,6 +277,7 @@ class CommerceTest extends TestCase
         $this->assertDatabaseHas('whatsapp_messages', ['recipient' => '5521988888888', 'attempts' => 1, 'status' => 'pending']);
         $t->query('sales')->where('id', $id)->update(['status' => 'cancelled']);
         Http::fake();
+        $this->travel(61)->seconds();
         $this->artisan('poseitech:whatsapp')->assertSuccessful();
         $this->assertDatabaseHas('whatsapp_messages', ['status' => 'cancelled']);
         Http::assertNothingSent();

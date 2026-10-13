@@ -1,11 +1,10 @@
 <?php
 
-use App\Jobs\SendMercadoPagoLink;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Analytics;
 use App\Services\DatabaseCapacity;
-use App\Services\MailQueue;
+use App\Services\DeliveryQueue;
 use App\Services\MercadoPago;
 use App\Services\Tenant;
 use App\Services\WhatsApp;
@@ -30,7 +29,7 @@ Artisan::command('poseitech:admin {email} {--name=PoseiTech}', function () {
     $this->info('Super Admin criado.');
 });
 Artisan::command('poseitech:automate', function () {
-    foreach (Company::with('plan')->where('status', 'active')->cursor() as $company) {
+    foreach (Company::with('plan')->where('status', 'active')->lazyById(50) as $company) {
         if (! $company->available()) {
             continue;
         }
@@ -74,43 +73,18 @@ Artisan::command('poseitech:automate', function () {
 });
 Artisan::command('poseitech:mail {--limit=50}', function () {
     $limit = max(1, min(500, (int) $this->option('limit')));
-    foreach (DB::table('email_logs')->where('status', 'pending')->orderBy('id')->limit($limit)->get() as $email) {
-        $company = Company::with('plan')->find($email->company_id);
-        if (! $company || ! $company->available() || ! $company->smtp) {
-            continue;
-        }
-        app(MailQueue::class)->send($email->id, $company);
-    }
-    foreach (DB::table('campaigns')->where('status', 'queued')->get() as $campaign) {
-        $q = DB::table('email_logs')->where('campaign_id', $campaign->id);
-        if (! (clone $q)->whereIn('status', ['pending', 'sending'])->exists()) {
-            $failed = (clone $q)->where('status', 'failed')->exists();
-            DB::table('campaigns')->where('id', $campaign->id)->update(['status' => $failed ? 'failed' : 'completed', 'updated_at' => now()]);
-            DB::table('alerts')->insertOrIgnore(['company_id' => $campaign->company_id, 'key' => 'campaign-'.$campaign->id, 'title' => $failed ? 'Campanha com falhas' : 'Campanha concluída', 'body' => $campaign->name, 'url' => '/campaigns', 'created_at' => now(), 'updated_at' => now()]);
-        }
-    } $this->info('Fila processada.');
+    app(DeliveryQueue::class)->process('email', $limit);
+    $this->info('Fila processada.');
 });
 Schedule::command('poseitech:automate')->dailyAt('06:00')->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);
-Schedule::command('poseitech:mail')->everyMinute()->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);
 
 Artisan::command('poseitech:whatsapp {--limit=50}', function () {
     DB::table('whatsapp_messages')->where('status', 'sending')->where('updated_at', '<', now()->subMinutes(2))->update(['status' => 'pending', 'updated_at' => now()]);
-    foreach (DB::table('whatsapp_messages')->where('status', 'pending')->orderBy('id')->limit(max(1, min(500, (int) $this->option('limit'))))->get() as $message) {
-        $company = Company::with('plan')->find($message->company_id);
-        if (! $company || ! $company->available()) {
-            continue;
-        }
-        app(Tenant::class)->company = $company;
-        app(WhatsApp::class)->send($message);
-    }
+    app(DeliveryQueue::class)->process('whatsapp', max(1, min(500, (int) $this->option('limit'))));
     $this->info('Fila WhatsApp processada.');
 });
-Schedule::command('poseitech:whatsapp')->everyMinute()->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);
 
 Artisan::command('poseitech:mercadopago {--limit=30}', function () {
-    foreach (DB::table('mp_deliveries')->where('channel', 'whatsapp')->where('status', 'pending')->orderBy('id')->limit(20)->get() as $delivery) {
-        app(SendMercadoPagoLink::class, ['companyId' => $delivery->company_id, 'checkoutId' => $delivery->checkout_id])->handle(app(Tenant::class), app(MercadoPago::class));
-    }
     $query = DB::table('mp_checkouts')->whereIn('status', ['pending', 'unknown', 'creating', 'approved', 'review'])->where('created_at', '>', now()->subDays(180));
     foreach ($query->orderBy('updated_at')->limit(max(1, min(100, (int) $this->option('limit'))))->get() as $checkout) {
         $company = Company::find($checkout->company_id);
@@ -133,3 +107,31 @@ Artisan::command('poseitech:mercadopago {--limit=30}', function () {
     $this->info('Pagamentos consultados.');
 });
 Schedule::command('poseitech:mercadopago')->everyFiveMinutes()->withoutOverlapping()->when(fn () => DatabaseCapacity::remaining() === 0);
+
+Artisan::command('poseitech:deliver {--once : Processa um lote e encerra} {--limit=100} {--sleep=3} {--shard=0} {--shards=1}', function () {
+    $limit = max(1, min(1000, (int) $this->option('limit')));
+    $shards = max(1, min(32, (int) $this->option('shards')));
+    $shard = (int) $this->option('shard');
+    if ($shard < 0 || $shard >= $shards) {
+        $this->error('Partição inválida. Use 0 até shards-1.');
+
+        return 1;
+    }
+    do {
+        if (DatabaseCapacity::remaining() === 0) {
+            // Recover only journal-deduplicated WhatsApp sends. SMTP ambiguity is never replayed.
+            DB::table('whatsapp_messages')->where('status', 'sending')->where('updated_at', '<', now()->subMinutes(5))->update(['status' => 'pending', 'next_attempt_at' => now(), 'updated_at' => now()]);
+            DB::table('email_logs')->where('status', 'sending')->where('updated_at', '<', now()->subMinutes(5))->update(['status' => 'failed', 'next_attempt_at' => null, 'error' => 'Envio interrompido sem confirmação. Confira o destinatário antes de reenviar.', 'updated_at' => now()]);
+            foreach (['email', 'whatsapp', 'payment'] as $channel) {
+                app(DeliveryQueue::class)->process($channel, $limit, $this->option('once') ? 12 : 45, $shard, $shards);
+            }
+        }
+        DeliveryQueue::releaseConnection();
+        if ($this->option('once')) {
+            break;
+        }
+        sleep(max(1, min(60, (int) $this->option('sleep'))));
+    } while (true);
+    $this->info('Filas automáticas processadas.');
+});
+Schedule::command('poseitech:deliver --once')->everyMinute()->withoutOverlapping(5)->when(fn () => ! config('delivery.daemon') && DatabaseCapacity::remaining() === 0);

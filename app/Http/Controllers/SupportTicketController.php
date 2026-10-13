@@ -4,13 +4,86 @@ namespace App\Http\Controllers;
 
 use App\Services\Tenant;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class SupportTicketController extends Controller
 {
+    private array $storedFiles = [];
+
+    private function fileRules(): array
+    {
+        return ['attachments' => 'nullable|array|max:5', 'attachments.*' => 'required|file|mimes:jpg,jpeg,png,webp,pdf,txt,doc,docx,xls,xlsx,zip|max:5120'];
+    }
+
+    private function transaction(callable $callback)
+    {
+        $this->storedFiles = [];
+        try {
+            // Filesystem writes cannot be retried with a database transaction.
+            return DB::transaction($callback);
+        } catch (\Throwable $e) {
+            Storage::disk('local')->delete($this->storedFiles);
+            throw $e;
+        }
+    }
+
+    private function attach(Request $r, int $messageId): void
+    {
+        foreach ($r->file('attachments', []) as $file) {
+            $path = $file->store('support/'.$messageId, 'local');
+            if (! $path) {
+                throw new \RuntimeException('Não foi possível armazenar o anexo.');
+            }
+            $this->storedFiles[] = $path;
+            DB::table('support_attachments')->insert(['message_id' => $messageId, 'path' => $path, 'name' => mb_substr(basename(str_replace('\\', '/', $file->getClientOriginalName())), 0, 200), 'mime' => $file->getMimeType(), 'size' => $file->getSize(), 'created_at' => now()]);
+        }
+    }
+
+    private function messages(int $id, ?int $before = null, ?int $after = null)
+    {
+        $query = DB::table('support_messages')->where('ticket_id', $id);
+        if ($before) {
+            $query->where('id', '<', $before);
+        }
+        if ($after) {
+            $query->where('id', '>', $after);
+        }
+        $messages = $after ? $query->orderBy('id')->limit(30)->get() : $query->orderByDesc('id')->limit(30)->get()->reverse()->values();
+        $files = DB::table('support_attachments')->whereIn('message_id', $messages->pluck('id'))->get()->groupBy('message_id');
+        foreach ($messages as $message) {
+            $message->attachments = $files->get($message->id, collect());
+        }
+
+        return $messages;
+    }
+
+    public function history(Request $r, int $id)
+    {
+        $platform = $this->platform($r);
+        $this->query($platform)->where('id', $id)->firstOrFail();
+        $r->validate(['before' => 'nullable|integer|min:1', 'after' => 'nullable|integer|min:1']);
+        $messages = $this->messages($id, $r->integer('before') ?: null, $r->integer('after') ?: null);
+        $base = $platform ? '/admin/tickets' : '/support';
+
+        return response()->json(['html' => view('components.support-messages', compact('messages', 'base', 'id', 'platform'))->render(), 'first' => $messages->first()?->id, 'last' => $messages->last()?->id, 'more' => $messages->count() === 30]);
+    }
+
+    public function attachment(Request $r, int $id, int $file)
+    {
+        $this->query($this->platform($r))->where('id', $id)->firstOrFail();
+        $attachment = DB::table('support_attachments')->join('support_messages', 'support_messages.id', '=', 'support_attachments.message_id')->where('support_messages.ticket_id', $id)->where('support_attachments.id', $file)->select('support_attachments.*')->firstOrFail();
+        abort_unless(Storage::disk('local')->exists($attachment->path), 404);
+        $inline = $r->boolean('preview') && in_array($attachment->mime, ['image/jpeg', 'image/png', 'image/webp']);
+
+        return Storage::disk('local')->response($attachment->path, $attachment->name, ['Content-Type' => $attachment->mime, 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store'], $inline ? 'inline' : 'attachment');
+    }
+
     public const CATEGORIES = ['technical' => 'Problema técnico', 'whatsapp' => 'WhatsApp', 'payments' => 'Vendas e pagamentos', 'access' => 'Acesso e permissões', 'suggestion' => 'Sugestão', 'other' => 'Outro assunto'];
 
     public const PRIORITIES = ['low' => 'Baixa', 'normal' => 'Normal', 'high' => 'Alta', 'urgent' => 'Urgente'];
@@ -31,6 +104,12 @@ class SupportTicketController extends Controller
 
     private function query(bool $platform)
     {
+        $check = fn () => Schema::hasTable('support_attachments');
+        $ready = app()->runningUnitTests() ? $check() : Cache::store('file')->remember('support.schema.000008.'.hash('sha256', (string) config('database.default').config('database.connections.'.config('database.default').'.database')), 60, $check);
+        if (! $ready) {
+            abort(response()->view('deployment-pending', ['public' => true], 503));
+        }
+
         return DB::table('support_tickets')->when(! $platform, fn ($q) => $q->where('support_tickets.company_id', $this->t->id()));
     }
 
@@ -63,18 +142,19 @@ class SupportTicketController extends Controller
 
     public function store(Request $r)
     {
-        $d = $r->validate(['subject' => 'required|string|min:5|max:160', 'body' => 'required|string|min:10|max:8000', 'category' => ['required', Rule::in(array_keys(self::CATEGORIES))], 'priority' => ['required', Rule::in(array_keys(self::PRIORITIES))], 'request_key' => 'required|uuid']);
-        $id = DB::transaction(function () use ($d) {
+        $d = $r->validate(['subject' => 'required|string|min:5|max:160', 'body' => 'required|string|min:10|max:8000', 'category' => ['required', Rule::in(array_keys(self::CATEGORIES))], 'priority' => ['required', Rule::in(array_keys(self::PRIORITIES))], 'request_key' => 'required|uuid'] + $this->fileRules());
+        $id = $this->transaction(function () use ($d, $r) {
             $this->t->lock();
             if ($existing = $this->query(false)->where('request_key', $d['request_key'])->first()) {
                 return $existing->id;
             }
             $id = DB::table('support_tickets')->insertGetId(['company_id' => $this->t->id(), 'user_id' => auth()->id(), 'subject' => $d['subject'], 'category' => $d['category'], 'priority' => $d['priority'], 'request_key' => $d['request_key'], 'created_at' => now(), 'updated_at' => now()]);
-            $this->message($id, $d['body'], 'company');
+            $messageId = $this->message($id, $d['body'], 'company');
+            $this->attach($r, $messageId);
             $this->t->audit('ticket.created', 'support_tickets', $id);
 
             return $id;
-        }, 3);
+        });
 
         return redirect('/support/'.$id)->with('success', 'Chamado aberto. O suporte receberá sua solicitação no painel de atendimento.');
     }
@@ -84,7 +164,7 @@ class SupportTicketController extends Controller
         $platform = $this->platform($r);
         $ticket = $this->query($platform)->join('companies', 'companies.id', '=', 'support_tickets.company_id')->select('support_tickets.*', 'companies.name as company_name')->where('support_tickets.id', $id)->firstOrFail();
         $this->query($platform)->where('id', $id)->update([$platform ? 'support_unread' : 'company_unread' => false]);
-        $messages = DB::table('support_messages')->where('ticket_id', $id)->orderByDesc('id')->paginate(30)->withQueryString();
+        $messages = $this->messages($id);
         $base = $platform ? '/admin/tickets' : '/support';
 
         return view('support-show', compact('platform', 'ticket', 'messages', 'base'));
@@ -93,8 +173,8 @@ class SupportTicketController extends Controller
     public function reply(Request $r, int $id)
     {
         $platform = $this->platform($r);
-        $d = $r->validate(['body' => 'required|string|min:1|max:8000', 'request_key' => 'required|uuid']);
-        DB::transaction(function () use ($d, $id, $platform) {
+        $d = $r->validate(['body' => 'nullable|required_without:attachments|string|min:1|max:8000', 'request_key' => 'required|uuid'] + $this->fileRules());
+        $this->transaction(function () use ($d, $id, $platform, $r) {
             $ticket = $this->query($platform)->where('id', $id)->lockForUpdate()->firstOrFail();
             if (DB::table('support_messages')->where('request_key', $d['request_key'])->where('ticket_id', $id)->exists()) {
                 return;
@@ -102,10 +182,11 @@ class SupportTicketController extends Controller
             if ($ticket->status === 'closed') {
                 throw ValidationException::withMessages(['body' => 'Reabra o chamado antes de responder.']);
             }
-            $messageId = $this->message($id, $d['body'], $platform ? 'support' : 'company', $d['request_key']);
+            $messageId = $this->message($id, $d['body'] ?? '', $platform ? 'support' : 'company', $d['request_key']);
+            $this->attach($r, $messageId);
             $this->query($platform)->where('id', $id)->update(['status' => $platform ? 'waiting_company' : 'waiting_support', 'company_unread' => $platform, 'support_unread' => ! $platform, 'updated_at' => now()]);
             $this->notify($ticket, $platform, $messageId, 'Nova resposta no chamado #'.$id);
-        }, 3);
+        });
 
         return back()->with('success', 'Resposta adicionada ao chamado.');
     }

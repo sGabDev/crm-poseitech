@@ -22,6 +22,11 @@ class SendMercadoPagoLink implements ShouldQueue
         }
         $tenant->company = $company;
         $checkout = $tenant->find('mp_checkouts', $this->checkoutId);
+        if ($checkout->status !== 'pending' || now()->gte($checkout->expires_at)) {
+            $tenant->query('mp_deliveries')->where('checkout_id', $this->checkoutId)->where('channel', 'whatsapp')->whereIn('status', ['pending', 'failed'])->update(['status' => 'cancelled', 'next_attempt_at' => null, 'updated_at' => now()]);
+
+            return;
+        }
         try {
             if (! $company->available()) {
                 throw new \RuntimeException('Company unavailable');
@@ -29,7 +34,7 @@ class SendMercadoPagoLink implements ShouldQueue
             $mp->deliver($checkout, 'whatsapp');
         } catch (\Throwable $error) {
             // A failure before sending is retryable; ambiguous sends already have their own state.
-            $tenant->query('mp_deliveries')->where('checkout_id', $this->checkoutId)->where('channel', 'whatsapp')->where('status', 'pending')->update(['status' => 'failed', 'updated_at' => now()]);
+            $tenant->query('mp_deliveries')->where('checkout_id', $this->checkoutId)->where('channel', 'whatsapp')->whereIn('status', ['pending', 'failed'])->update(['status' => 'failed', 'next_attempt_at' => now()->addMinutes(5), 'updated_at' => now()]);
         }
     }
 }

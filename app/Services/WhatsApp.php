@@ -82,7 +82,7 @@ class WhatsApp
             if ($existing = $this->t->query('whatsapp_messages')->where('sale_id', $saleId)->first()) {
                 if ($manual && $existing->status === 'failed') {
                     $this->t->update('whatsapp_messages', $existing->id, [
-                        'status' => 'pending', 'attempts' => 0, 'error' => null,
+                        'status' => 'pending', 'attempts' => 0, 'error' => null, 'next_attempt_at' => null,
                         'recipient' => self::phone($customer->phone), 'connection_id' => $connection->id,
                     ]);
                 }
@@ -104,10 +104,11 @@ class WhatsApp
     public function send(object $message): void
     {
         $q = $this->t->query('whatsapp_messages')->where('id', $message->id);
-        if (! $q->where('status', 'pending')->update(['status' => 'sending', 'updated_at' => now()])) {
+        if (! $q->where('status', 'pending')->where(fn ($q) => $q->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<=', now()))->update(['status' => 'sending', 'attempts' => DB::raw('attempts+1'), 'updated_at' => now()])) {
             return;
         }
         $q = $this->t->query('whatsapp_messages')->where('id', $message->id);
+        $message = (clone $q)->firstOrFail();
         try {
             $sale = $this->t->find('sales', $message->sale_id);
             $customer = $this->t->find('customers', $message->customer_id);
@@ -116,12 +117,14 @@ class WhatsApp
 
                 return;
             }
+            DeliveryQueue::releaseConnection();
             $result = $this->api($this->t->id(), $message->connection_id, '/messages', ['id' => (string) $message->id, 'phone' => $message->recipient, 'text' => $message->body]);
             $state = $result['status'] ?? 'unknown';
             $q->update(['status' => $state === 'sent' ? 'sent' : 'unknown', 'sent_at' => $state === 'sent' ? now() : null, 'error' => $state === 'sent' ? null : 'Envio sem confirmação. Confira no celular antes de reenviar.', 'updated_at' => now()]);
         } catch (\Throwable $e) {
-            $attempts = $message->attempts + 1;
-            $q->update(['status' => $attempts >= 10 ? 'failed' : 'pending', 'attempts' => $attempts, 'error' => self::connectionError($e), 'updated_at' => now()]);
+            $permanent = $e instanceof RequestException && $e->response->status() === 422;
+            // The Baileys journal deduplicates the same message ID, including uncertain sends.
+            $q->update(['status' => $permanent ? 'failed' : 'pending', 'next_attempt_at' => $permanent ? null : now()->addSeconds(min(3600, 60 * (2 ** min($message->attempts - 1, 6)))), 'error' => self::connectionError($e), 'updated_at' => now()]);
         }
     }
 }

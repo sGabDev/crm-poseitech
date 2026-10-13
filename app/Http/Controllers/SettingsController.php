@@ -49,6 +49,7 @@ class SettingsController extends Controller
             }
             $company->update($d);
         } elseif ($section === 'connections') {
+            Gate::authorize('platform');
             $r->validate(['integration_modules' => 'nullable|array', 'integration_modules.*' => ['string', Rule::in(['whatsapp', 'message_templates'])]]);
             DB::transaction(function () use ($company, $r) {
                 $locked = $company->newQuery()->whereKey($company->id)->lockForUpdate()->firstOrFail();

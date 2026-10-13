@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Jobs\SendMercadoPagoLink;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -172,6 +171,7 @@ class MercadoPago
                 $sale = $this->t->find('sales', $c->sale_id);
                 if ($sale->paid >= $sale->total) {
                     $this->t->update('sales', $sale->id, ['status' => 'completed']);
+                    app(SaleNotifications::class)->queue($sale->id);
                 }
             }
             $this->alert($c, 'Pagamento confirmado', 'Mercado Pago confirmou '.Tenant::money($c->amount).'.', 'approved');
@@ -239,9 +239,6 @@ class MercadoPago
             if ($channel === 'email' && ! filter_var($customer->email, FILTER_VALIDATE_EMAIL)) {
                 $this->fail('Cadastre um e-mail válido para o cliente.');
             }
-            if ($channel === 'email' && empty($this->t->company->smtp['host'])) {
-                $this->fail('Configure o SMTP da empresa antes de enviar o link.');
-            }
             $resolved = null;
             if ($channel === 'whatsapp') {
                 if (! $this->t->company->enabled('whatsapp')) {
@@ -306,7 +303,6 @@ class MercadoPago
             } else {
                 $this->t->insert('mp_deliveries', ['checkout_id' => $c->id, 'channel' => 'whatsapp', 'request_key' => (string) Str::uuid(), 'status' => 'pending']);
             }
-            SendMercadoPagoLink::dispatchAfterResponse($this->t->id(), $c->id);
         });
     }
 }

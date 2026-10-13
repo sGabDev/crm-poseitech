@@ -47,6 +47,8 @@ Route::get('/logo/{companyId}', [PortalController::class, 'logo'])->whereNumber(
 Route::middleware(['auth', 'can:platform'])->group(function () {
     Route::get('/admin/tickets', [SupportTicketController::class, 'index']);
     Route::get('/admin/tickets/{id}', [SupportTicketController::class, 'show'])->whereNumber('id');
+    Route::get('/admin/tickets/{id}/history', [SupportTicketController::class, 'history'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::get('/admin/tickets/{id}/files/{file}', [SupportTicketController::class, 'attachment'])->whereNumber(['id', 'file'])->middleware('throttle:60,1');
     Route::post('/admin/tickets/{id}/reply', [SupportTicketController::class, 'reply'])->whereNumber('id')->middleware('throttle:30,1');
     Route::post('/admin/tickets/{id}/status', [SupportTicketController::class, 'update'])->whereNumber('id')->middleware('throttle:20,1');
     Route::get('/admin', [AdminController::class, 'index']);
@@ -61,6 +63,8 @@ Route::middleware(['auth', SupportAccess::class])->group(function () {
     Route::get('/support/new', [SupportTicketController::class, 'create']);
     Route::post('/support', [SupportTicketController::class, 'store'])->middleware('throttle:5,1');
     Route::get('/support/{id}', [SupportTicketController::class, 'show'])->whereNumber('id');
+    Route::get('/support/{id}/history', [SupportTicketController::class, 'history'])->whereNumber('id')->middleware('throttle:20,1');
+    Route::get('/support/{id}/files/{file}', [SupportTicketController::class, 'attachment'])->whereNumber(['id', 'file'])->middleware('throttle:60,1');
     Route::post('/support/{id}/reply', [SupportTicketController::class, 'reply'])->whereNumber('id')->middleware('throttle:30,1');
     Route::post('/support/{id}/status', [SupportTicketController::class, 'update'])->whereNumber('id')->middleware('throttle:20,1');
 });

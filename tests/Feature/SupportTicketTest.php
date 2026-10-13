@@ -6,7 +6,9 @@ use App\Models\Company;
 use App\Models\Plan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -94,21 +96,68 @@ class SupportTicketTest extends TestCase
         $this->get('/support')->assertForbidden();
     }
 
-    public function test_settings_tabs_render_and_company_controls_only_connection_modules(): void
+    public function test_settings_tabs_render_and_only_platform_controls_modules(): void
     {
         foreach (['company', 'modules', 'integrations', 'mail', 'team', 'automation', 'security', 'activity'] as $tab) {
             $this->get('/settings?tab='.$tab)->assertOk();
         }
         $this->get('/settings?tab=modules')->assertSee('name="integration_modules[]"', false);
         $original = $this->company->modules;
+        $this->post('/settings', ['section' => 'connections'])->assertForbidden();
+        $this->post('/settings', ['section' => 'modules', 'modules' => []])->assertForbidden();
+        $this->assertSame($original, $this->company->fresh()->modules);
+        $super = User::factory()->create(['company_id' => null, 'role' => 'super', 'active' => true]);
+        $this->actingAs($super)->withSession(['support_company' => $this->company->id]);
         $this->post('/settings', ['section' => 'connections'])->assertRedirect();
         $this->assertEquals(array_values(array_diff($original, ['whatsapp', 'message_templates'])), $this->company->fresh()->modules);
         $this->post('/settings', ['section' => 'connections', 'integration_modules' => ['whatsapp', 'message_templates']])->assertRedirect();
         $this->assertContains('whatsapp', $this->company->fresh()->modules);
         $this->assertContains('message_templates', $this->company->fresh()->modules);
         $this->post('/settings', ['section' => 'connections', 'integration_modules' => ['sales']])->assertSessionHasErrors('integration_modules.0');
-        $this->post('/settings', ['section' => 'modules', 'modules' => []])->assertForbidden();
+        $this->actingAs($this->owner);
         $this->owner->update(['role' => 'staff']);
         $this->post('/settings', ['section' => 'connections'])->assertForbidden();
+    }
+
+    public function test_attachments_are_private_scoped_and_duplicate_submissions_do_not_store_twice(): void
+    {
+        Storage::fake('local');
+        $id = $this->ticket();
+        $payload = ['request_key' => (string) Str::uuid(), 'attachments' => [UploadedFile::fake()->createWithContent('diagnostico.txt', 'Erro de conexão')]];
+        $this->post('/support/'.$id.'/reply', $payload)->assertSessionHasNoErrors();
+        $this->post('/support/'.$id.'/reply', $payload)->assertSessionHasNoErrors();
+        $this->assertDatabaseCount('support_attachments', 1);
+        $file = DB::table('support_attachments')->first();
+        Storage::disk('local')->assertExists($file->path);
+        $this->get('/support/'.$id.'/files/'.$file->id)->assertOk()->assertDownload('diagnostico.txt');
+        $this->getJson('/support/'.$id.'/history?after=1')->assertOk()->assertJsonFragment(['last' => $file->message_id]);
+        $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'outra-arquivo', 'modules' => []]);
+        $this->actingAs(User::factory()->create(['company_id' => $other->id, 'role' => 'admin', 'active' => true]));
+        $this->get('/support/'.$id.'/files/'.$file->id)->assertNotFound();
+        $this->getJson('/support/'.$id.'/history?before=999')->assertNotFound();
+    }
+
+    public function test_chat_loads_latest_thirty_messages_and_older_history_by_cursor(): void
+    {
+        $id = $this->ticket();
+        for ($i = 0; $i < 70; $i++) {
+            DB::table('support_messages')->insert(['ticket_id' => $id, 'user_id' => $this->owner->id, 'author_name' => $this->owner->name, 'author_role' => 'company', 'body' => 'Mensagem sequencial '.$i, 'created_at' => now(), 'updated_at' => now()]);
+        }
+        $this->get('/support/'.$id)->assertOk()->assertSee('Mensagem sequencial 69')->assertDontSee('Mensagem sequencial 0')->assertViewHas('messages', fn ($messages) => $messages->count() === 30 && $messages->first()->id === 42);
+        $this->getJson('/support/'.$id.'/history?before=42')->assertOk()->assertJsonPath('first', 12)->assertJsonPath('last', 41)->assertJsonPath('more', true);
+        $this->getJson('/support/'.$id.'/history?before=12')->assertOk()->assertJsonPath('first', 1)->assertJsonPath('last', 11)->assertJsonPath('more', false);
+        $this->getJson('/support/'.$id.'/history?after=70')->assertOk()->assertJsonPath('first', 71)->assertJsonPath('last', 71);
+    }
+
+    public function test_rejects_unsafe_or_oversized_files_and_empty_replies(): void
+    {
+        Storage::fake('local');
+        $id = $this->ticket();
+        foreach ([UploadedFile::fake()->createWithContent('ataque.php', '<?php echo 1;'), UploadedFile::fake()->create('grande.pdf', 5121, 'application/pdf')] as $file) {
+            $this->post('/support/'.$id.'/reply', ['body' => 'Veja o arquivo', 'request_key' => (string) Str::uuid(), 'attachments' => [$file]])->assertSessionHasErrors('attachments.0');
+        }
+        $this->post('/support/'.$id.'/reply', ['request_key' => (string) Str::uuid(), 'attachments' => []])->assertSessionHasErrors('body');
+        $this->assertDatabaseCount('support_attachments', 0);
+        $this->assertDatabaseCount('support_messages', 1);
     }
 }

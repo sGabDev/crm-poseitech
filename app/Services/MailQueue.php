@@ -55,15 +55,20 @@ class MailQueue
                     $view['html'] = 'emails.receipt-custom';
                 }
             }
+            DeliveryQueue::releaseConnection();
             $mailer->send($view, $data, function ($m) use ($email, $smtp) {
                 $m->to($email->recipient)->from($smtp['from'], $smtp['from_name'] ?? '')->subject($email->subject);
             });
-            $query->update(['status' => 'sent', 'error' => null, 'sent_at' => now(), 'updated_at' => now()]);
+            $query->update(['status' => 'sent', 'error' => null, 'next_attempt_at' => null, 'sent_at' => now(), 'updated_at' => now()]);
 
             return 'sent';
         } catch (Throwable $e) {
             $reason = CompanySmtp::failure($e);
-            $query->update(['status' => 'failed', 'error' => $reason, 'updated_at' => now()]);
+            // Retry only explicit rejection or failures before a connection was established.
+            // A timeout after SMTP DATA may mean the provider already accepted the message.
+            $safeRetry = preg_match('/\b(421|450|451|452)\b|connection refused|getaddrinfo|could not resolve|network is unreachable/i', $e->getMessage());
+            $next = $safeRetry && $email->attempts < 7 ? now()->addSeconds(min(3600, 60 * (2 ** $email->attempts))) : null;
+            $query->update(['status' => 'failed', 'error' => $reason, 'next_attempt_at' => $next, 'updated_at' => now()]);
             Log::warning('company.smtp_failed', ['company_id' => $company->id, 'email_id' => $id, 'category' => $reason, 'exception_class' => get_class($e)]);
 
             return 'failed';

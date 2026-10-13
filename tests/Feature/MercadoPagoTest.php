@@ -75,6 +75,19 @@ class MercadoPagoTest extends TestCase
         return $this->postJson('/integrations/mercadopago/'.$this->company->id.'/webhook?data.id=98765&type=payment', ['type' => 'payment', 'data' => ['id' => '98765']], ['x-request-id' => 'request-1', 'x-signature' => "ts=$ts,v1=$hash"]);
     }
 
+    public function test_real_payment_approval_queues_receipts_once_without_sending_inside_webhook(): void
+    {
+        $this->tenant->insert('whatsapp_connections', ['name' => 'Atendimento', 'automatic' => true]);
+        $checkout = $this->checkout();
+        $this->webhook($checkout)->assertOk();
+        $this->webhook($checkout)->assertOk();
+        $this->assertDatabaseCount('email_logs', 1);
+        $this->assertDatabaseCount('whatsapp_messages', 1);
+        $this->assertDatabaseHas('email_logs', ['sale_id' => $checkout->sale_id, 'status' => 'pending']);
+        $this->assertDatabaseHas('whatsapp_messages', ['sale_id' => $checkout->sale_id, 'status' => 'pending']);
+        Http::assertSentCount(1);
+    }
+
     public function test_sale_is_pending_and_checkout_is_reused_without_crediting_or_sending_receipt(): void
     {
         $c = $this->checkout();
@@ -240,7 +253,7 @@ class MercadoPagoTest extends TestCase
         $this->assertDatabaseHas('accounts', ['id' => $id, 'paid' => 10000, 'status' => 'paid']);
     }
 
-    public function test_automatic_sale_sends_email_and_dispatches_whatsapp_after_response(): void
+    public function test_automatic_sale_queues_both_channels_for_background_processing(): void
     {
         Bus::fake([SendMercadoPagoLink::class]);
         $this->company->update(['smtp' => ['host' => 'smtp.example.test']]);
@@ -252,7 +265,7 @@ class MercadoPagoTest extends TestCase
         $this->assertDatabaseCount('sales', 1);
         $this->assertDatabaseCount('mp_checkouts', 1);
         $this->assertDatabaseCount('email_logs', 1);
-        Bus::assertDispatchedAfterResponse(SendMercadoPagoLink::class);
+        Bus::assertNotDispatchedAfterResponse(SendMercadoPagoLink::class);
         $c = $this->tenant->query('mp_checkouts')->first();
         config(['whatsapp.token' => 'fake', 'whatsapp.url' => 'http://baileys.test']);
         Http::fake(['*/chat-resolve' => Http::response(['jid' => '5511999999999@s.whatsapp.net']), '*/chat-send' => Http::response(['status' => 'sent'])]);
