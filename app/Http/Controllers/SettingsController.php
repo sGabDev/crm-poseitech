@@ -85,8 +85,10 @@ class SettingsController extends Controller
             $this->t->audit('catalog.link_changed', 'companies', $company->id, ['slug' => $before], $d);
         } elseif ($section === 'catalog') {
             $this->t->authorize('catalog', true);
+            $seoFields = $r->validate(['catalog_indexable' => 'nullable|boolean', 'catalog_seo_title' => 'nullable|string|max:70', 'catalog_seo_description' => 'nullable|string|max:160']);
             $d = $r->validate(['catalog_title' => 'nullable|string|max:120', 'catalog_description' => 'nullable|string|max:1000', 'catalog_color' => 'required|regex:/^#[a-fA-F0-9]{6}$/', 'catalog_checkout' => 'nullable|boolean', 'catalog_open' => 'nullable|boolean', 'catalog_minimum' => 'nullable|numeric|min:0|max:99999', 'catalog_delivery_fee' => 'nullable|numeric|min:0|max:9999', 'catalog_eta' => 'nullable|string|max:100', 'catalog_hours' => 'nullable|string|max:1000', 'catalog_cover' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048', 'catalog_banner' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048']);
             $d['catalog_checkout'] = $r->boolean('catalog_checkout');
+            $d = array_merge($d, $seoFields, ['catalog_indexable' => $r->boolean('catalog_indexable')]);
             $d['catalog_open'] = $r->boolean('catalog_open');
             foreach (['catalog_minimum', 'catalog_delivery_fee'] as $field) {
                 $d[$field] = Tenant::cents($d[$field] ?? 0);

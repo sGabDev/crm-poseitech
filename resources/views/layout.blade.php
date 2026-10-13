@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>@yield('title','Visão geral') · PoseiTech CRM</title>
+@php($pageSeo=\App\Services\Seo::metadata($company ?? null))
+<title>{{ $pageSeo['title'] ?? trim($__env->yieldContent('title','Visão geral')).' · PoseiTech CRM' }}</title>
+@include('components.seo')
 <link rel="stylesheet" href="{{ asset('assets/app.css') }}?v={{ filemtime(public_path('assets/app.css')) }}">
 <link rel="stylesheet" href="{{ asset('assets/layout-fixes.css') }}?v={{ filemtime(public_path('assets/layout-fixes.css')) }}">
 <link rel="stylesheet" href="{{ asset('assets/refresh.css') }}?v={{ filemtime(public_path('assets/refresh.css')) }}">
@@ -12,8 +14,9 @@
 </script>
 </head>
 <body class="{{ View::hasSection('immersive') ? 'inbox-page' : '' }} @yield('body-class')">
+<a class="skip-link" href="#main-content">Pular para o conteúdo</a>
 @hasSection('immersive')
-<main class="inbox-fullscreen">@yield('content')</main>
+<main class="inbox-fullscreen" id="main-content" tabindex="-1">@yield('content')</main>
 @else
 @php($public = $public ?? false)
 @if(!$public && auth()->check())
@@ -86,14 +89,14 @@
 @if(session('support_company'))<div class="support-banner">Acesso de suporte ativo. Ações registradas em auditoria.<form method="post" action="{{ url('/admin/leave') }}">@csrf<button>Encerrar suporte</button>
 </form>
 </div>@endif
-<main>
+<main id="main-content" tabindex="-1">
 @else<div class="public-shell">
 <a class="brand" href="{{ url('/') }}">
 <span class="brand-mark">P</span>
 <span>PoseiTech<small>CRM & GESTÃO</small>
 </span>
 </a>
-<main>@endif
+<main id="main-content" tabindex="-1">@endif
 @if(session('success'))<div class="notice success" role="status">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="notice error" role="alert">
 <strong>Revise os dados informados.</strong>

@@ -156,3 +156,23 @@ Artisan::command('poseitech:deliver {--once : Processa um lote e encerra} {--lim
     $this->info('Filas automáticas processadas.');
 });
 Schedule::command('poseitech:deliver --once')->everyMinute()->withoutOverlapping(5)->when(fn () => ! config('delivery.daemon') && DatabaseCapacity::remaining() === 0);
+
+Artisan::command('poseitech:production-check', function () {
+    $checks = [
+        'APP_ENV=production' => app()->environment('production'),
+        'APP_DEBUG=false' => ! config('app.debug'),
+        'APP_URL usa HTTPS' => parse_url(config('app.url'), PHP_URL_SCHEME) === 'https',
+        'APP_KEY configurada' => filled(config('app.key')),
+        'Cookie de sessão seguro' => config('session.secure') === true,
+        'Cache persistente' => ! in_array(config('cache.default'), ['array', 'null']),
+        'Storage e cache graváveis' => is_writable(storage_path('framework')) && is_writable(base_path('bootstrap/cache')),
+        'Ícones e imagem de compartilhamento' => is_file(public_path('assets/share-card.png')) && filesize(public_path('favicon.ico')) > 0,
+    ];
+    foreach ($checks as $label => $passed) {
+        $this->line(($passed ? '[OK] ' : '[PENDENTE] ').$label);
+    }
+    $this->line(config('seo.indexing') ? 'Indexação pública habilitada.' : 'Indexação desabilitada (SEO_INDEXING=false).');
+    $this->line('Este diagnóstico não valida DNS, TLS externo, cron, workers ou capacidade da hospedagem.');
+
+    return in_array(false, $checks, true) ? 1 : 0;
+});

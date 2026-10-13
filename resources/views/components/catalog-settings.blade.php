@@ -6,6 +6,9 @@
 <label>Apresentação<textarea name="catalog_description" maxlength="1000">{{ old('catalog_description',$company->settings['catalog_description'] ?? '') }}</textarea></label>
 <label class="check"><input type="checkbox" name="catalog_checkout" value="1" @checked(old('catalog_checkout',$company->settings['catalog_checkout'] ?? false))>Receber pedidos pelo catálogo</label>
 <label class="check"><input type="checkbox" name="catalog_open" value="1" @checked(old('catalog_open',$company->settings['catalog_open'] ?? true))>Loja aberta para novos pedidos</label>
+<label class="check"><input type="checkbox" name="catalog_indexable" value="1" @checked(old('catalog_indexable',$company->settings['catalog_indexable'] ?? true))>Permitir que este catálogo apareça em buscadores</label>
+<label>Título para buscadores<input name="catalog_seo_title" maxlength="70" value="{{ old('catalog_seo_title',$company->settings['catalog_seo_title'] ?? '') }}" placeholder="{{ $company->name }} · Catálogo online"></label>
+<label>Descrição para busca e compartilhamento<textarea name="catalog_seo_description" maxlength="160" rows="2">{{ old('catalog_seo_description',$company->settings['catalog_seo_description'] ?? '') }}</textarea><small>Se vazio, usamos a apresentação do catálogo. O banner ou logo da empresa será a imagem de compartilhamento.</small></label>
 <label>Pedido mínimo (R$)<input name="catalog_minimum" type="number" min="0" step="0.01" value="{{ old('catalog_minimum',($company->settings['catalog_minimum'] ?? 0)/100) }}"></label>
 <label>Taxa fixa de entrega (R$)<input name="catalog_delivery_fee" type="number" min="0" step="0.01" value="{{ old('catalog_delivery_fee',($company->settings['catalog_delivery_fee'] ?? 0)/100) }}"></label>
 <label>Tempo médio de entrega<input name="catalog_eta" maxlength="100" placeholder="Ex.: 40–60 min" value="{{ old('catalog_eta',$company->settings['catalog_eta'] ?? '') }}"></label>

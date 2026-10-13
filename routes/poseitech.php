@@ -12,13 +12,24 @@ use App\Http\Controllers\MercadoPagoController;
 use App\Http\Controllers\MessageTemplateController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ResourceController;
+use App\Http\Controllers\SeoController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\WhatsAppController;
 use App\Http\Controllers\WhatsAppInboxController;
+use App\Http\Middleware\RequirePasswordChange;
 use App\Http\Middleware\SupportAccess;
 use App\Http\Middleware\WhatsAppModule;
+use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
+
+Route::get('/robots.txt', [SeoController::class, 'robots'])->withoutMiddleware([ValidateCsrfToken::class, VerifyCsrfToken::class, StartSession::class, ShareErrorsFromSession::class, AddQueuedCookiesToResponse::class, RequirePasswordChange::class]);
+Route::get('/sitemap.xml', [SeoController::class, 'sitemap'])->withoutMiddleware([ValidateCsrfToken::class, VerifyCsrfToken::class, StartSession::class, ShareErrorsFromSession::class, AddQueuedCookiesToResponse::class, RequirePasswordChange::class]);
+Route::get('/sitemaps/catalogs-{page}.xml', [SeoController::class, 'catalogs'])->whereNumber('page')->withoutMiddleware([ValidateCsrfToken::class, VerifyCsrfToken::class, StartSession::class, ShareErrorsFromSession::class, AddQueuedCookiesToResponse::class, RequirePasswordChange::class]);
 
 Route::get('/', fn () => redirect(auth()->check() ? '/dashboard' : '/login'));
 Route::post('/integrations/mercadopago/{companyId}/webhook', [MercadoPagoController::class, 'webhook'])->whereNumber('companyId')->middleware('throttle:180,1');
