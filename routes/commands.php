@@ -3,6 +3,7 @@
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Analytics;
+use App\Services\CatalogPix;
 use App\Services\DatabaseCapacity;
 use App\Services\DeliveryQueue;
 use App\Services\MercadoPago;
@@ -93,6 +94,26 @@ Artisan::command('poseitech:mercadopago {--limit=30}', function () {
         }
         app(Tenant::class)->company = $company;
         try {
+            if (($checkout->kind ?? 'preference') === 'pix') {
+                if (! $checkout->pix_provider_id && in_array($checkout->status, ['creating', 'unknown']) && now()->lt($checkout->expires_at)) {
+                    app(CatalogPix::class)->generate($checkout);
+                }
+                app(MercadoPago::class)->refresh(app(Tenant::class)->find('mp_checkouts', $checkout->id));
+                $fresh = app(Tenant::class)->find('mp_checkouts', $checkout->id);
+                if ($fresh->status === 'pending' && $fresh->pix_provider_id && now()->gte($fresh->expires_at)) {
+                    app(MercadoPago::class)->api('PUT', '/v1/payments/'.$fresh->pix_provider_id, ['status' => 'cancelled']);
+                    app(MercadoPago::class)->confirm($fresh->pix_provider_id);
+                    $fresh = app(Tenant::class)->find('mp_checkouts', $checkout->id);
+                }
+                if (in_array($fresh->status, ['cancelled', 'rejected', 'refunded', 'charged_back'])) {
+                    $order = app(Tenant::class)->query('catalog_orders')->where('checkout_id', $fresh->id)->whereNull('sale_id')->where('status', 'pending')->first();
+                    if ($order) {
+                        app(CatalogPix::class)->release($order);
+                    }
+                }
+
+                continue;
+            }
             if (! $checkout->checkout_url && in_array($checkout->status, ['creating', 'unknown']) && now()->lt($checkout->expires_at)) {
                 app(MercadoPago::class)->recover($checkout);
             }

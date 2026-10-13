@@ -13,14 +13,14 @@ class MercadoPago
 {
     public function __construct(public Tenant $t) {}
 
-    public function api(string $method, string $path, array $data = []): array
+    public function api(string $method, string $path, array $data = [], ?string $idempotency = null): array
     {
         $token = $this->t->company->mercadopago['access_token'] ?? '';
         if (! $token) {
             $this->fail('Configure o Mercado Pago em Configurações.');
         }
 
-        return Http::withToken($token)->acceptJson()->connectTimeout(5)->timeout(20)
+        return Http::withToken($token)->acceptJson()->when($idempotency, fn ($http) => $http->withHeaders(['X-Idempotency-Key' => $idempotency]))->connectTimeout(5)->timeout(20)
             ->send($method, 'https://api.mercadopago.com'.$path, [$method === 'GET' ? 'query' : 'json' => $data])->throw()->json();
     }
 
@@ -98,6 +98,11 @@ class MercadoPago
 
     public function refresh(object $checkout): void
     {
+        if (($checkout->kind ?? 'preference') === 'pix' && $checkout->pix_provider_id) {
+            $this->confirm($checkout->pix_provider_id);
+
+            return;
+        }
         $result = $this->api('GET', '/v1/payments/search', ['external_reference' => $checkout->reference, 'sort' => 'date_created', 'criteria' => 'desc', 'limit' => 50]);
         foreach ($result['results'] ?? [] as $payment) {
             $this->confirm((string) $payment['id']);
@@ -120,10 +125,16 @@ class MercadoPago
             }
             $status = $p['status'] ?? 'unknown';
             $valid = (string) ($p['id'] ?? '') === $providerId && (string) ($p['collector_id'] ?? '') === $c->collector_id && ($p['currency_id'] ?? '') === $c->currency && (int) round(($p['transaction_amount'] ?? 0) * 100) === $c->amount && array_key_exists('live_mode', $p) && (bool) $p['live_mode'] === ($c->mode === 'production');
+            if (($c->kind ?? 'preference') === 'pix') {
+                $valid = $valid && ($p['payment_method_id'] ?? '') === 'pix';
+            }
             if (! $valid) {
                 $this->review($c, 'Dados do pagamento divergentes. Confira a conta Mercado Pago.');
 
                 return;
+            }
+            if (($c->kind ?? 'preference') === 'pix' && ! $c->pix_provider_id) {
+                $this->t->update('mp_checkouts', $c->id, ['pix_provider_id' => $providerId]);
             }
             if (! $tx) {
                 $id = $this->t->insert('mp_transactions', ['checkout_id' => $c->id, 'provider_id' => $providerId, 'status' => $status]);
@@ -142,7 +153,8 @@ class MercadoPago
             $this->t->update('mp_transactions', $tx->id, ['status' => $status]);
             if ($status !== 'approved') {
                 if (! $c->credited_at) {
-                    $this->t->update('mp_checkouts', $c->id, ['status' => in_array($status, ['pending', 'in_process', 'authorized', 'rejected', 'cancelled']) ? 'pending' : $status]);
+                    $next = (($c->kind ?? 'preference') === 'pix' && in_array($status, ['rejected', 'cancelled'])) ? $status : (in_array($status, ['pending', 'in_process', 'authorized', 'rejected', 'cancelled']) ? 'pending' : $status);
+                    $this->t->update('mp_checkouts', $c->id, ['status' => $next]);
                 }
 
                 return;
@@ -218,7 +230,7 @@ class MercadoPago
 
     public function deliver(object $c, string $channel): void
     {
-        if (! in_array($channel, ['email', 'whatsapp']) || $c->status !== 'pending' || ! $c->checkout_url || now()->gte($c->expires_at)) {
+        if (! in_array($channel, ['email', 'whatsapp']) || $c->status !== 'pending' || (! $c->checkout_url && ! (($c->kind ?? 'preference') === 'pix' && $c->pix_code)) || now()->gte($c->expires_at)) {
             $this->fail('Este link não está disponível para envio.');
         }
         Cache::lock('mp-send-'.$c->id.'-'.$channel, 60)->block(2, function () use ($c, $channel) {

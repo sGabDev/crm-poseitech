@@ -330,12 +330,14 @@ class CommerceTest extends TestCase
         $this->withCookie('catalog_visitor_'.$this->company->id, $token);
         $this->company->update(['settings' => ['catalog_checkout' => true]]);
         $data = ['request_key' => (string) Str::uuid(), 'name' => 'Cliente privado', 'phone' => '11999999999', 'address' => 'Endereco exclusivo historico', 'items' => [['product_id' => $this->product, 'quantity' => 1]]];
+        $this->post('/catalog/empresa-a/register', ['name' => $data['name'], 'phone' => $data['phone'], 'address' => $data['address'], 'document' => '52998224725', 'email' => 'online@example.test', 'district' => 'Centro', 'city' => 'Cidade'])->assertSessionHasNoErrors();
+        $data += ['payment_method' => 'cash', 'fulfillment' => 'delivery'];
         $this->post('/catalog/empresa-a', $data)->assertSessionHasNoErrors();
         $order = DB::table('catalog_orders')->first();
         $this->get('/catalog/empresa-a')->assertOk()->assertSee('Endereco exclusivo historico')->assertSee('Aguardando confirmação')->assertHeader('Cache-Control', 'no-store, private');
         $this->withCookie('catalog_visitor_'.$this->company->id, str_repeat('c', 64));
         $this->get('/catalog/empresa-a')->assertOk()->assertDontSee('Endereco exclusivo historico');
-        $this->post('/catalog/empresa-a', $data)->assertNotFound();
+        $this->post('/catalog/empresa-a', $data)->assertSessionHasErrors('registration');
         $this->withCookie('catalog_visitor_'.$this->company->id, $token);
         $this->post('/sales', $this->sale(['catalog_order_id' => $order->id, 'auto_payment' => 1]))->assertSessionHasNoErrors();
         $saleId = DB::table('catalog_orders')->value('sale_id');
@@ -385,6 +387,8 @@ class CommerceTest extends TestCase
         $this->withCookie('catalog_visitor_'.$this->company->id, str_repeat('a', 64));
         $this->company->update(['settings' => ['catalog_checkout' => true]]);
         $payload = ['request_key' => (string) Str::uuid(), 'name' => 'Comprador online', 'phone' => '+55 (11) 99999-9999', 'address' => 'Rua do cliente, 123', 'items' => [['product_id' => $this->product, 'quantity' => 2, 'price' => 1]]];
+        $this->post('/catalog/empresa-a/register', ['name' => $payload['name'], 'phone' => $payload['phone'], 'address' => $payload['address'], 'document' => '52998224725', 'email' => 'online@example.test', 'district' => 'Centro', 'city' => 'Cidade'])->assertSessionHasNoErrors();
+        $payload += ['payment_method' => 'cash', 'fulfillment' => 'delivery'];
         $this->get('/catalog/empresa-a')->assertOk()->assertSee('Enviar pedido à loja');
         $this->post('/catalog/empresa-a', $payload)->assertSessionHasNoErrors();
         $this->post('/catalog/empresa-a', $payload)->assertSessionHasNoErrors();
@@ -422,7 +426,9 @@ class CommerceTest extends TestCase
         $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'outra', 'modules' => ['catalog', 'orders']]);
         $product = DB::table('products')->insertGetId(['company_id' => $other->id, 'name' => 'Privado', 'price' => 1, 'stock' => 100, 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
         $this->company->update(['settings' => ['catalog_checkout' => true]]);
-        $this->post('/catalog/empresa-a', ['request_key' => (string) Str::uuid(), 'name' => 'Teste', 'phone' => '11999999999', 'items' => [['product_id' => $product, 'quantity' => 1]]])->assertNotFound();
+        $this->withCookie('catalog_visitor_'.$this->company->id, str_repeat('a', 64));
+        $this->post('/catalog/empresa-a/register', ['name' => 'Teste', 'phone' => '11999999999', 'document' => '52998224725', 'email' => 'teste@example.test', 'address' => 'Rua do teste, 123', 'district' => 'Centro', 'city' => 'Cidade'])->assertSessionHasNoErrors();
+        $this->post('/catalog/empresa-a', ['request_key' => (string) Str::uuid(), 'payment_method' => 'cash', 'fulfillment' => 'pickup', 'items' => [['product_id' => $product, 'quantity' => 1]]])->assertNotFound();
         $this->assertSame(0, DB::table('catalog_orders')->count());
     }
 

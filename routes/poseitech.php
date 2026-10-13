@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', fn () => redirect(auth()->check() ? '/dashboard' : '/login'));
 Route::post('/integrations/mercadopago/{companyId}/webhook', [MercadoPagoController::class, 'webhook'])->whereNumber('companyId')->middleware('throttle:180,1');
 Route::get('/pay/{reference}', [MercadoPagoController::class, 'publicPayment'])->whereUuid('reference')->middleware('throttle:120,1');
+Route::get('/pay/{reference}/status', [MercadoPagoController::class, 'publicStatus'])->whereUuid('reference')->middleware('throttle:catalog-payment-status');
 Route::middleware('guest')->group(function () {
     Route::get('/login', fn () => view('auth', ['mode' => 'login']))->name('login');
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
@@ -41,9 +42,14 @@ Route::get('/portal', [PortalController::class, 'home']);
 Route::post('/portal/logout', [PortalController::class, 'logout']);
 Route::get('/receipt/{token}', [PortalController::class, 'receipt'])->where('token', '[a-f0-9]{64}')->middleware('throttle:60,1');
 Route::post('/catalog/{slug}', [CatalogController::class, 'checkout'])->middleware('throttle:10,1');
+Route::post('/catalog/{slug}/register', [CatalogController::class, 'register'])->middleware('throttle:10,1');
+Route::get('/catalog/{slug}/orders/{id}', [CatalogController::class, 'payment'])->whereNumber('id')->middleware('throttle:60,1');
+Route::get('/catalog/{slug}/orders/{id}/status', [CatalogController::class, 'paymentStatus'])->whereNumber('id')->middleware('throttle:catalog-payment-status');
+Route::post('/catalog/{slug}/orders/{id}/pix', [CatalogController::class, 'retryPix'])->whereNumber('id')->middleware('throttle:catalog-pix');
 Route::get('/catalog/{slug}', [PortalController::class, 'catalog']);
 Route::get('/media/{companyId}/{productId}', [PortalController::class, 'image'])->whereNumber(['companyId', 'productId']);
 Route::get('/logo/{companyId}', [PortalController::class, 'logo'])->whereNumber('companyId');
+Route::get('/catalog-media/{companyId}/{kind}', [PortalController::class, 'catalogMedia'])->whereNumber('companyId')->whereIn('kind', ['cover', 'banner']);
 Route::middleware(['auth', 'can:platform'])->group(function () {
     Route::get('/admin/tickets', [SupportTicketController::class, 'index']);
     Route::get('/admin/tickets/{id}', [SupportTicketController::class, 'show'])->whereNumber('id');

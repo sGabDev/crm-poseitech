@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Company;
+use App\Services\CatalogRegistration;
 use App\Services\PortalLink;
 use App\Services\Tenant;
 use Carbon\Carbon;
@@ -121,7 +122,7 @@ class PortalController extends Controller
             $join->on('orders.sale_id', '=', 'catalog_orders.sale_id')->on('orders.company_id', '=', 'catalog_orders.company_id');
         })->select('catalog_orders.*', 'sales.status as sale_status', 'sales.total as registered_total', 'orders.status as order_status', 'orders.delivery as order_delivery')->orderByDesc('catalog_orders.id')->paginate(10, ['*'], 'history_page')->fragment('catalog-history');
 
-        return response()->view('catalog', ['history' => $history, 'company' => $company, 'products' => $this->t->query('products')->where('active', true)->whereNull('deleted_at')->orderBy('category')->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
+        return response()->view('catalog-storefront', ['profile' => CatalogRegistration::profile($r, $company->id), 'history' => $history, 'company' => $company, 'products' => $this->t->query('products')->where('active', true)->whereNull('deleted_at')->orderBy('category')->orderBy('name')->get()])->header('Cache-Control', 'private, no-store');
     }
 
     public function image(Request $r, int $companyId, int $productId)
@@ -143,5 +144,15 @@ class PortalController extends Controller
         abort_unless($company->available() && $company->logo, 404);
 
         return Storage::disk('local')->response($company->logo, null, ['Cache-Control' => 'private, max-age=300']);
+    }
+
+    public function catalogMedia(int $companyId, string $kind)
+    {
+        $company = Company::findOrFail($companyId);
+        abort_unless($company->available() && $company->enabled('catalog') && in_array($kind, ['cover', 'banner']), 404);
+        $path = $company->settings['catalog_'.$kind] ?? null;
+        abort_unless($path && Storage::disk('local')->exists($path), 404);
+
+        return Storage::disk('local')->response($path, null, ['Cache-Control' => 'public, max-age=300']);
     }
 }

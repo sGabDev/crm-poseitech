@@ -148,9 +148,24 @@ class MercadoPagoController extends Controller
     {
         $checkout = DB::table('mp_checkouts')->where('reference', $reference)->firstOrFail();
         $company = Company::findOrFail($checkout->company_id);
+        if (($checkout->kind ?? 'preference') === 'pix') {
+            abort_unless($company->available(), 404);
+            $order = DB::table('catalog_orders')->where('company_id', $company->id)->where('checkout_id', $checkout->id)->firstOrFail();
+            $statusUrl = url('/pay/'.$reference.'/status');
+
+            return response()->view('catalog-payment', compact('company', 'order', 'checkout', 'statusUrl'))->header('Cache-Control', 'private, no-store')->header('Referrer-Policy', 'no-referrer')->header('X-Robots-Tag', 'noindex, nofollow');
+        }
         $account = DB::table('accounts')->where('company_id', $company->id)->where('id', $checkout->account_id)->firstOrFail();
         $available = $company->available() && ($company->mercadopago['enabled'] ?? false) && $checkout->checkout_url && $checkout->status === 'pending' && now()->lt($checkout->expires_at) && $account->status === 'pending' && $account->amount - $account->paid === $checkout->amount;
 
         return response()->view('payment-public', compact('checkout', 'company', 'available'))->header('Cache-Control', 'no-store')->header('Referrer-Policy', 'no-referrer')->header('X-Robots-Tag', 'noindex, nofollow');
+    }
+
+    public function publicStatus(string $reference)
+    {
+        $checkout = DB::table('mp_checkouts')->where('reference', $reference)->where('kind', 'pix')->firstOrFail();
+        abort_unless(Company::findOrFail($checkout->company_id)->available(), 404);
+
+        return response()->json(['status' => $checkout->status])->header('Cache-Control', 'private, no-store');
     }
 }

@@ -10,7 +10,7 @@ class CustomerMerge
 {
     public const FIELDS = ['name' => 'Nome', 'document' => 'CPF/CNPJ', 'email' => 'E-mail', 'phone' => 'Telefone', 'whatsapp' => 'WhatsApp', 'birthday' => 'Nascimento', 'address' => 'Endereço', 'district' => 'Bairro', 'city' => 'Cidade', 'source' => 'Origem', 'due_day' => 'Dia de vencimento'];
 
-    public const TABLES = ['sales', 'accounts', 'payments', 'loyalty_transactions', 'customer_credits', 'email_logs', 'debt_receipts', 'customer_deposits', 'wallet_entries', 'coupons', 'coupon_grants', 'whatsapp_messages', 'whatsapp_conversations', 'template_deliveries', 'mp_checkouts'];
+    public const TABLES = ['sales', 'accounts', 'payments', 'loyalty_transactions', 'customer_credits', 'email_logs', 'debt_receipts', 'customer_deposits', 'wallet_entries', 'coupons', 'coupon_grants', 'whatsapp_messages', 'whatsapp_conversations', 'template_deliveries', 'mp_checkouts', 'catalog_orders'];
 
     public function __construct(private Tenant $t) {}
 

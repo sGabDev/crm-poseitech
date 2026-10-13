@@ -102,6 +102,9 @@ class Commerce
                     $this->fail('Este pedido online já foi atendido ou cancelado.');
                 }
                 $d['order'] = true;
+                if ($catalogOrder->customer_id) {
+                    $d['customer_id'] = $catalogOrder->customer_id;
+                }
             }
             $customer = ! empty($d['customer_id']) ? $this->t->find('customers', $d['customer_id']) : null;
             if ($customer?->anonymized_at) {
@@ -142,6 +145,17 @@ class Commerce
             }
             $payments = $submitted->filter(fn ($p) => ! in_array($p['method'], ['fiado', 'mercadopago']) && Tenant::cents($p['amount'] ?? 0) > 0);
             $paid = $wallet + $payments->sum(fn ($p) => Tenant::cents($p['amount']));
+            $prepaid = null;
+            if ($catalogOrder?->checkout_id) {
+                $prepaid = $this->t->find('mp_checkouts', $catalogOrder->checkout_id);
+                $canonical = fn ($lines) => collect($lines)->map(fn ($line) => ['product_id' => (int) $line['product_id'], 'quantity' => (int) $line['quantity'], 'addons' => collect($line['addons'] ?? [])->map(fn ($v) => (int) $v)->sort()->values()->all()])->sortBy(fn ($line) => json_encode($line))->values()->all();
+                if ($prepaid->status !== 'approved' || $total !== $catalogOrder->total || $wallet || $canonical($d['items']) !== $canonical(json_decode($catalogOrder->items, true))) {
+                    $this->fail('O pedido Pix precisa estar pago e manter os itens e o valor originais.');
+                }
+                $payments = collect();
+                $paid = $total;
+                $mercadoPago = false;
+            }
             if ($paid > $total) {
                 $this->fail('Os pagamentos excedem o total da venda. Informe o valor recebido sem o troco.');
             }
@@ -154,6 +168,9 @@ class Commerce
                 }
             }
             $methods = $payments->pluck('method')->unique()->values()->all();
+            if ($prepaid) {
+                $methods[] = 'mercadopago';
+            }
             if ($wallet) {
                 $methods[] = 'wallet';
             }
@@ -171,7 +188,7 @@ class Commerce
                 $p = $line['p'];
                 $qty = $line['quantity'];
                 $deduct = $this->t->company->enabled('stock') && $p->type === 'product';
-                if ($deduct) {
+                if ($deduct && ! ($catalogOrder->stock_reserved ?? false)) {
                     $this->stock($p->id, -$qty, 'sale', 'Venda #'.$saleId, $saleId, ! empty($d['allow_negative_stock']));
                 }
                 $this->t->insert('sale_items', ['sale_id' => $saleId, 'product_id' => $p->id, 'name' => $p->name, 'quantity' => $qty,
@@ -179,6 +196,11 @@ class Commerce
             }
             foreach ($payments as $p) {
                 $this->payment($saleId, null, $customer?->id, Tenant::cents($p['amount']), $p['method'], 'in');
+            }
+            if ($prepaid) {
+                $this->t->update('accounts', $prepaid->account_id, ['sale_id' => $saleId]);
+                $this->t->query('payments')->where('account_id', $prepaid->account_id)->update(['sale_id' => $saleId, 'updated_at' => now()]);
+                $this->t->update('mp_checkouts', $prepaid->id, ['sale_id' => $saleId]);
             }
             if ($paid < $total) {
                 $this->t->insert('accounts', ['type' => 'receivable', 'description' => ($mercadoPago ? 'Mercado Pago venda #' : 'Fiado venda #').$saleId,

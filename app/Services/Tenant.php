@@ -33,6 +33,9 @@ class Tenant
 
     public function insert(string $table, array $data): int
     {
+        if ($table === 'customers' && array_key_exists('document', $data)) {
+            $data['document_normalized'] = preg_replace('/\D/', '', $data['document'] ?? '') ?: null;
+        }
         $this->query($table);
 
         return DB::table($table)->insertGetId(array_merge($data, ['company_id' => $this->id(), 'created_at' => now(), 'updated_at' => now()]));
@@ -40,6 +43,9 @@ class Tenant
 
     public function update(string $table, int $id, array $data): void
     {
+        if ($table === 'customers' && array_key_exists('document', $data)) {
+            $data['document_normalized'] = preg_replace('/\D/', '', $data['document'] ?? '') ?: null;
+        }
         unset($data['id'], $data['company_id'], $data['created_at']);
         $this->query($table)->where('id', $id)->update($data + ['updated_at' => now()]);
     }

@@ -1,5 +1,12 @@
 const store = document.querySelector('.catalog-store');
 if (store) {
+ const openDialog = id => { const dialog = document.getElementById(id); if (!dialog) return; document.querySelectorAll('dialog[open]').forEach(other => { if (other !== dialog) other.close(); }); if (!dialog.open) dialog.showModal(); };
+ store.querySelectorAll('[data-open-dialog]').forEach(button => button.addEventListener('click', () => openDialog(button.dataset.openDialog)));
+ store.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
+ store.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target === dialog) { const box=dialog.getBoundingClientRect(); if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom) dialog.close(); } }));
+ if (location.hash === '#catalog-cart' && document.getElementById('catalog-cart')) openDialog('catalog-cart');
+ if (store.querySelector('.store-notice.error')) openDialog(store.dataset.profile==='1' ? 'catalog-cart' : 'store-profile');
+
  const cards = [...store.querySelectorAll('.catalog-product')];
  const money = value => new Intl.NumberFormat('pt-BR', {style:'currency', currency:store.dataset.currency || 'BRL'}).format(value / 100);
  const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -79,6 +86,13 @@ if (store) {
    document.querySelector('#catalog-send').disabled = !saved.length;
    document.querySelector('#catalog-continue').disabled = !saved.length;
    document.querySelector('#catalog-clear').disabled = !saved.length;
+   const fee = document.querySelector('#catalog-fulfillment')?.value === 'pickup' ? 0 : Number(store.dataset.fee || 0);
+   document.querySelector('#catalog-fee').textContent = money(fee);
+   document.querySelector('#catalog-grand-total').textContent = money(total + fee);
+   document.querySelector('#catalog-bar-total').textContent = units + ' item(ns) \u00b7 ' + money(total + (saved.length ? fee : 0));
+   document.querySelector('.catalog-cart-bar').hidden = !saved.length;
+   document.querySelector('#catalog-send').disabled = !saved.length || store.dataset.profile !== '1' || total < Number(store.dataset.minimum || 0);
+   if(saved.length && total < Number(store.dataset.minimum || 0)) notice.textContent='Pedido m\u00ednimo: ' + money(Number(store.dataset.minimum));
    try { localStorage.setItem(storageKey,JSON.stringify(saved)); } catch {}
   };
   cards.forEach(card => {
@@ -91,7 +105,8 @@ if (store) {
   });
   document.querySelector('#catalog-clear').addEventListener('click',()=>{cards.forEach(card=>{const input=card.querySelector('.catalog-quantity');if(input)input.value=0;card.querySelectorAll('.catalog-addon').forEach(addon=>addon.checked=false);});notice.textContent='Carrinho limpo.';update();});
   document.querySelectorAll('.catalog-reorder').forEach(element=>element.addEventListener('click',()=>{restore(JSON.parse(element.dataset.items),true);update();document.querySelector('#catalog-cart').scrollIntoView({behavior:'smooth'});}));
-  document.querySelector('#catalog-continue').addEventListener('click',()=>{document.querySelector('#catalog-customer-details').open=true;form.querySelector('[name=name]').focus();});
+  document.querySelector('#catalog-continue').addEventListener('click',()=>{document.querySelector('#catalog-customer-details').open=true;if(store.dataset.profile!=='1')openDialog('store-profile');});
+  document.querySelector('#catalog-fulfillment').addEventListener('change',update);
   form.addEventListener('invalid',()=>{document.querySelector('#catalog-customer-details').open=true;},true);
   form.addEventListener('submit', event => {
    const invalid = cards.map(card=>card.querySelector('.catalog-quantity')).find(input=>input&&!input.checkValidity());

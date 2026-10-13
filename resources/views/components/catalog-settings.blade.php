@@ -1,9 +1,16 @@
 @if($company->enabled('catalog'))
 <section class="card"><h2>Seu catálogo público</h2><p><a href="{{ url('/catalog/'.$company->slug) }}" target="_blank" rel="noopener">{{ url('/catalog/'.$company->slug) }}</a></p>
-<form method="post" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="catalog">
+<form method="post" enctype="multipart/form-data" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="catalog">
 <label>Título da vitrine<input name="catalog_title" maxlength="120" value="{{ old('catalog_title',$company->settings['catalog_title'] ?? '') }}"></label>
 <label>Cor da marca<input type="color" name="catalog_color" value="{{ old('catalog_color',$company->settings['catalog_color'] ?? '#155e75') }}"></label>
 <label>Apresentação<textarea name="catalog_description" maxlength="1000">{{ old('catalog_description',$company->settings['catalog_description'] ?? '') }}</textarea></label>
 <label class="check"><input type="checkbox" name="catalog_checkout" value="1" @checked(old('catalog_checkout',$company->settings['catalog_checkout'] ?? false))>Receber pedidos pelo catálogo</label>
-<p class="muted">O cliente envia o carrinho para conferência da equipe. Frete e pagamento são combinados no atendimento. Logo, endereço e WhatsApp usam os dados da empresa.</p><button>Salvar catálogo</button>
+<label class="check"><input type="checkbox" name="catalog_open" value="1" @checked(old('catalog_open',$company->settings['catalog_open'] ?? true))>Loja aberta para novos pedidos</label>
+<label>Pedido mínimo (R$)<input name="catalog_minimum" type="number" min="0" step="0.01" value="{{ old('catalog_minimum',($company->settings['catalog_minimum'] ?? 0)/100) }}"></label>
+<label>Taxa fixa de entrega (R$)<input name="catalog_delivery_fee" type="number" min="0" step="0.01" value="{{ old('catalog_delivery_fee',($company->settings['catalog_delivery_fee'] ?? 0)/100) }}"></label>
+<label>Tempo médio de entrega<input name="catalog_eta" maxlength="100" placeholder="Ex.: 40–60 min" value="{{ old('catalog_eta',$company->settings['catalog_eta'] ?? '') }}"></label>
+<label>Horários de funcionamento<textarea name="catalog_hours" maxlength="1000" rows="4" placeholder="Seg a sex: 17:30 às 23:30">{{ old('catalog_hours',$company->settings['catalog_hours'] ?? '') }}</textarea><small>Informativo. Use “Loja aberta” para controlar a aceitação de pedidos.</small></label>
+<label>Imagem de capa<input name="catalog_cover" type="file" accept="image/png,image/jpeg,image/webp"><small>Até 2 MB. Deixe vazio para manter a imagem atual.</small></label>
+<label>Banner promocional<input name="catalog_banner" type="file" accept="image/png,image/jpeg,image/webp"><small>Até 2 MB. Deixe vazio para manter a imagem atual.</small></label>
+<p class="muted">Pedidos exigem cadastro por CPF. Pix online usa a integração Mercado Pago da empresa, com QR code e confirmação automática. Dinheiro e cartão são pagos na entrega. Logo e contato usam os dados da empresa.</p><button>Salvar catálogo</button>
 </form>@can('platform')<hr><form method="post" action="{{ url('/settings') }}" class="form-grid">@csrf<input type="hidden" name="section" value="catalog_link"><label>Link do catálogo (somente suporte)<input name="slug" value="{{ $company->slug }}" required minlength="3" maxlength="80" pattern="[a-z0-9]+(-[a-z0-9]+)*"></label><p>Use letras minúsculas, números e hífens. O link anterior deixará de funcionar; compartilhe o novo com os clientes.</p><button>Alterar link</button></form>@else<p class="muted">Para alterar o link, solicite ao suporte.</p>@endcan</section>@endif
