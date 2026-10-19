@@ -14,7 +14,7 @@ class DatabaseCapacity
     public static function exhausted(\Throwable $error): bool
     {
         do {
-            if (in_array((int) ($error->errorInfo[1] ?? 0), [1226, 1203, 1040], true)) {
+            if (in_array((int) ($error->errorInfo[1] ?? 0), [1226, 1203, 1040, 9001], true)) {
                 return true;
             }
         } while ($error = $error->getPrevious());
@@ -24,7 +24,7 @@ class DatabaseCapacity
 
     public static function pause(): void
     {
-        @file_put_contents(self::path(), (string) (time() + 300), LOCK_EX);
+        @file_put_contents(self::path(), (string) (time() + max(1, (int) config('database_pool.cooldown', 300))), LOCK_EX);
     }
 
     public static function remaining(): int

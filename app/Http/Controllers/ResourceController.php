@@ -56,9 +56,9 @@ class ResourceController extends Controller
         $couponProducts = $resource === 'coupons' ? $this->t->query('products')->pluck('name', 'id') : collect();
         $records = $q->orderByDesc('id')->paginate(20)->withQueryString();
 
-        $grants = $resource === 'coupons' ? $this->t->query('coupon_grants')->join('coupons', 'coupons.id', '=', 'coupon_grants.coupon_id')->join('customers', 'customers.id', '=', 'coupon_grants.customer_id')->leftJoin('email_logs', 'email_logs.id', '=', 'coupon_grants.email_log_id')->select('coupon_grants.*', 'coupons.code', 'customers.name', 'email_logs.status as mail_status', 'email_logs.sent_at')->orderByDesc('coupon_grants.id')->paginate(20, ['*'], 'grants_page') : collect();
+        $grants = $resource === 'coupons' ? $this->t->query('coupon_grants')->join('coupons', fn ($join) => $join->on('coupons.id', '=', 'coupon_grants.coupon_id')->on('coupons.company_id', '=', 'coupon_grants.company_id'))->join('customers', fn ($join) => $join->on('customers.id', '=', 'coupon_grants.customer_id')->on('customers.company_id', '=', 'coupon_grants.company_id'))->leftJoin('email_logs', fn ($join) => $join->on('email_logs.id', '=', 'coupon_grants.email_log_id')->on('email_logs.company_id', '=', 'coupon_grants.company_id'))->select('coupon_grants.*', 'coupons.code', 'customers.name', 'email_logs.status as mail_status', 'email_logs.sent_at')->orderByDesc('coupon_grants.id')->paginate(20, ['*'], 'grants_page') : collect();
 
-        $couponUses = $resource === 'coupons' ? $this->t->query('sales')->join('coupons', 'coupons.id', '=', 'sales.coupon_id')->leftJoin('customers', 'customers.id', '=', 'sales.customer_id')->select('sales.id', 'sales.status', 'sales.created_at', 'coupons.code', 'customers.name')->orderByDesc('sales.id')->paginate(20, ['*'], 'uses_page') : collect();
+        $couponUses = $resource === 'coupons' ? $this->t->query('sales')->join('coupons', fn ($join) => $join->on('coupons.id', '=', 'sales.coupon_id')->on('coupons.company_id', '=', 'sales.company_id'))->leftJoin('customers', fn ($join) => $join->on('customers.id', '=', 'sales.customer_id')->on('customers.company_id', '=', 'sales.company_id'))->select('sales.id', 'sales.status', 'sales.created_at', 'coupons.code', 'customers.name')->orderByDesc('sales.id')->paginate(20, ['*'], 'uses_page') : collect();
 
         return view('records', compact('resource', 'spec', 'records', 'grants', 'couponUses', 'couponProducts'));
     }
@@ -220,7 +220,7 @@ class ResourceController extends Controller
         $points = $this->t->query('loyalty_transactions')->where('customer_id', $id)->sum('points');
         $credits = $this->t->query('customer_credits')->where('customer_id', $id)->orderByDesc('id')->get();
         $preferred = $this->t->query('payments')->where('customer_id', $id)->whereNull('reversed_at')->selectRaw('method, COUNT(*) as count')->groupBy('method')->orderByDesc('count')->value('method');
-        $usedCoupons = $this->t->query('sales')->join('coupons', 'coupons.id', '=', 'sales.coupon_id')->where('sales.customer_id', $id)->where('sales.status', 'completed')->get(['coupons.code', 'sales.created_at', 'sales.id']);
+        $usedCoupons = $this->t->query('sales')->join('coupons', fn ($join) => $join->on('coupons.id', '=', 'sales.coupon_id')->on('coupons.company_id', '=', 'sales.company_id'))->where('sales.customer_id', $id)->where('sales.status', 'completed')->get(['coupons.code', 'sales.created_at', 'sales.id']);
         $emails = $this->t->query('email_logs')->where('customer_id', $id)->orderByDesc('id')->limit(20)->get();
         $products = $this->t->query('sale_items')->whereIn('sale_id', (clone $query)->where('status', 'completed')->select('id'))->selectRaw('name, SUM(quantity) as quantity')->groupBy('name')->orderByDesc('quantity')->limit(8)->get();
         $timeline = $this->t->query('audit_logs')->where('entity', 'customers')->where('entity_id', $id)->orderByDesc('id')->limit(20)->get();

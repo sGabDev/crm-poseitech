@@ -1,5 +1,7 @@
 # Implantação em hospedagem compartilhada
 
+Consulte também [MySQL e pool de conexões](MYSQL.md). Confirme se seu plano oferece proxy gerenciado ou permite instalar ProxySQL; não altere a porta do banco nem presuma suporte a processos próprios em hospedagem compartilhada.
+
 Este guia descreve o uso de `scripts/hostinger.php`, incluído no projeto para instalações de produção com MySQL/MariaDB e HTTPS. O script contém autodetecção de caminhos PHP da Hostinger; não é um instalador universal para SQLite ou desenvolvimento local. Para Windows, Linux, macOS, servidores próprios e contêineres, use o procedimento geral do [README](../README.md).
 
 Todos os domínios, e-mails e caminhos dos exemplos são ilustrativos. Substitua-os pelos valores do ambiente. Execute os comandos na pasta que contém `artisan`. `php` deve apontar para um executável compatível com `composer.lock`; `composer` deve utilizar esse mesmo PHP.

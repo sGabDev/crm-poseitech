@@ -29,3 +29,4 @@ Thumbs.db
 /storage/app/private/whatsapp/
 /baileys-server.zip
 /storage/framework/db-capacity-*.until
+/storage/app/private/database-pool/

@@ -13,6 +13,7 @@ use App\Services\ReceiptHtml;
 use App\Services\Tenant;
 use App\Services\WhatsApp;
 use Carbon\Carbon;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Mail\Mailer;
@@ -1020,6 +1021,43 @@ class CommerceTest extends TestCase
         $this->post('/sales', $this->sale(['customer_id' => $foreign]))->assertNotFound();
         $this->get('/records/customers')->assertOk()->assertDontSee('SEGREDO EMPRESA B');
         $this->assertSame(0, DB::table('sales')->count());
+    }
+
+    public function test_coupon_joins_do_not_expose_foreign_data_even_with_inconsistent_references(): void
+    {
+        $saleId = app(Commerce::class)->sell($this->sale());
+        $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'foreign-join', 'modules' => config('poseitech.defaults')]);
+        $foreignCustomer = DB::table('customers')->insertGetId(['company_id' => $other->id, 'name' => 'PRIVATE FOREIGN CUSTOMER']);
+        $coupon = DB::table('coupons')->insertGetId(['company_id' => $other->id, 'code' => 'PRIVATE-FOREIGN-COUPON', 'type' => 'fixed', 'value' => 100, 'max_uses' => 10, 'expires_at' => now()->addDay()]);
+        // Simulate legacy/imported inconsistent foreign keys; schema only checks IDs.
+        DB::table('sales')->where('id', $saleId)->update(['coupon_id' => $coupon, 'customer_id' => $foreignCustomer]);
+        DB::table('coupon_grants')->insert(['company_id' => $this->company->id, 'coupon_id' => $coupon, 'customer_id' => $foreignCustomer]);
+        $this->get('/records/coupons')->assertOk()->assertDontSee('PRIVATE FOREIGN CUSTOMER')->assertDontSee('PRIVATE-FOREIGN-COUPON');
+    }
+
+    public function test_database_error_after_stock_mutation_rolls_back_the_whole_sale(): void
+    {
+        $data = $this->sale();
+        $transactionLevel = DB::connection()->transactionLevel();
+        $injected = false;
+        DB::listen(function (QueryExecuted $event) use (&$injected) {
+            if (! $injected && str_contains($event->sql, 'insert into "stock_movements"')) {
+                $injected = true;
+                throw new \RuntimeException('Simulated database interruption after stock write');
+            }
+        });
+        try {
+            app(Commerce::class)->sell($data);
+            $this->fail('Expected failure after stock mutation.');
+        } catch (\RuntimeException $error) {
+            $this->assertTrue($injected);
+            $this->assertSame('Simulated database interruption after stock write', $error->getMessage());
+        }
+        foreach (['sales', 'sale_items', 'payments', 'stock_movements', 'cash_transactions', 'flow_entries', 'accounts'] as $table) {
+            $this->assertSame(0, DB::table($table)->where('company_id', $this->company->id)->count(), $table);
+        }
+        $this->assertSame(10, DB::table('products')->where('id', $this->product)->value('stock'));
+        $this->assertSame($transactionLevel, DB::connection()->transactionLevel());
     }
 
     public function test_disabled_modules_and_staff_write_permissions_are_enforced(): void

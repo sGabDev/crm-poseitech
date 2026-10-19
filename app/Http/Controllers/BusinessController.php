@@ -275,7 +275,7 @@ class BusinessController extends Controller
     public function orders()
     {
         $this->t->authorize('orders');
-        $orders = $this->t->query('orders')->leftJoin('sales', 'sales.id', '=', 'orders.sale_id')->leftJoin('customers', function ($join) {
+        $orders = $this->t->query('orders')->leftJoin('sales', fn ($join) => $join->on('sales.id', '=', 'orders.sale_id')->on('sales.company_id', '=', 'orders.company_id'))->leftJoin('customers', function ($join) {
             $join->on('customers.id', '=', 'sales.customer_id')->on('customers.company_id', '=', 'orders.company_id');
         })->select('orders.*', 'customers.address as customer_address', 'customers.name as customer_name')->whereNotIn('orders.status', ['delivered', 'cancelled'])->orderBy('orders.id')->get();
 
@@ -316,8 +316,8 @@ class BusinessController extends Controller
         $this->t->authorize('finance');
         $data = $this->analytics->dashboard($period);
         $sales = $this->analytics->sales($period);
-        $data['sellers'] = (clone $sales)->join('users', 'users.id', '=', 'sales.user_id')->selectRaw('users.name, COUNT(*) as count, SUM(sales.total) as total, AVG(sales.total) as ticket')->groupBy('users.id', 'users.name')->get();
-        $data['categories'] = $this->t->query('sale_items')->leftJoin('products', 'products.id', '=', 'sale_items.product_id')->whereIn('sale_id', (clone $sales)->select('sales.id'))->selectRaw('products.category, SUM(sale_items.total) as total')->groupBy('products.category')->get();
+        $data['sellers'] = (clone $sales)->join('users', fn ($join) => $join->on('users.id', '=', 'sales.user_id')->on('users.company_id', '=', 'sales.company_id'))->selectRaw('users.name, COUNT(*) as count, SUM(sales.total) as total, AVG(sales.total) as ticket')->groupBy('users.id', 'users.name')->get();
+        $data['categories'] = $this->t->query('sale_items')->leftJoin('products', fn ($join) => $join->on('products.id', '=', 'sale_items.product_id')->on('products.company_id', '=', 'sale_items.company_id'))->whereIn('sale_id', (clone $sales)->select('sales.id'))->selectRaw('products.category, SUM(sale_items.total) as total')->groupBy('products.category')->get();
         $data['forecast'] = $this->t->query('sales')->where('status', 'completed')->where('created_at', '>=', now()->subDays(30))->where('created_at', '<', now()->startOfDay())->sum('total') / 30;
         $data['campaignResults'] = $this->t->query('email_logs')->selectRaw('status, COUNT(*) as count')->groupBy('status')->get();
         $data['loyaltyBalance'] = $this->t->query('loyalty_transactions')->sum('points');

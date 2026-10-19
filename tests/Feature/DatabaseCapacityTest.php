@@ -4,12 +4,27 @@ namespace Tests\Feature;
 
 use App\Services\DatabaseCapacity;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use PDOException;
 use Tests\TestCase;
 
 class DatabaseCapacityTest extends TestCase
 {
+    public function test_proxy_pool_wait_timeout_returns_503_without_reporting_sensitive_sql(): void
+    {
+        @unlink(DatabaseCapacity::path());
+        Log::spy();
+        Route::get('/pool-exhausted-test', function () {
+            $pdo = new PDOException('secret-password');
+            $pdo->errorInfo = ['HY000', 9001, 'secret-password'];
+            throw new QueryException('mysql', 'insert into customers values (?)', ['private-customer'], $pdo);
+        });
+        $this->getJson('/pool-exhausted-test')->assertStatus(503)->assertDontSee('private-customer')->assertDontSee('secret-password');
+        Log::shouldHaveReceived('warning')->once()->with('database.operation_failed', ['sqlstate' => 'HY000', 'driver_code' => 9001]);
+        Log::shouldNotHaveReceived('error');
+    }
+
     protected function tearDown(): void
     {
         @unlink(DatabaseCapacity::path());

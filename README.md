@@ -85,6 +85,8 @@ Substitua o e-mail; a senha será solicitada no terminal. O servidor embutido é
 
 ## Publicação em servidor
 
+Para dimensionamento de conexões, pool compartilhado por instância PHP, limites e validação com MySQL em produção, siga [deploy/MYSQL.md](deploy/MYSQL.md). As variáveis de pool exigem um proxy instalado e validado; não ativam um pool apenas por existir no `.env`.
+
 Use um servidor web com PHP compatível. Aponte a raiz pública do site para `public/`. No Apache, habilite o processamento do `.htaccess` e a reescrita de URLs; no Nginx ou outro servidor, configure o encaminhamento das rotas para `public/index.php`. O Nginx não interpreta `.htaccess`.
 
 Configure no ambiente de destino:
