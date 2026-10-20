@@ -11,6 +11,34 @@ use Tests\TestCase;
 
 class DatabaseCapacityTest extends TestCase
 {
+    public function test_connection_saturation_uses_a_short_pause_without_extending_it(): void
+    {
+        @unlink(DatabaseCapacity::path());
+        config(['database_pool.saturation_cooldown' => 3]);
+        foreach ([1040, 1203, 9001] as $code) {
+            @unlink(DatabaseCapacity::path());
+            $error = new PDOException('private');
+            $error->errorInfo = ['HY000', $code, 'private'];
+            DatabaseCapacity::pause($error);
+            $until = file_get_contents(DatabaseCapacity::path());
+            DatabaseCapacity::pause($error);
+            $this->assertSame($until, file_get_contents(DatabaseCapacity::path()));
+            $this->assertGreaterThan(0, DatabaseCapacity::remaining());
+            $this->assertLessThanOrEqual(3, DatabaseCapacity::remaining());
+        }
+    }
+
+    public function test_saturation_does_not_shorten_an_account_quota_pause(): void
+    {
+        @unlink(DatabaseCapacity::path());
+        DatabaseCapacity::pause();
+        $until = file_get_contents(DatabaseCapacity::path());
+        $error = new PDOException('private');
+        $error->errorInfo = ['HY000', 1040, 'private'];
+        DatabaseCapacity::pause($error);
+        $this->assertSame($until, file_get_contents(DatabaseCapacity::path()));
+    }
+
     public function test_proxy_pool_wait_timeout_returns_503_without_reporting_sensitive_sql(): void
     {
         @unlink(DatabaseCapacity::path());

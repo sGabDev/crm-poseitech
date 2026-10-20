@@ -28,7 +28,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontFlash(['access_token', 'webhook_secret']);
         $exceptions->report(function (PDOException $error) {
             if (DatabaseCapacity::exhausted($error)) {
-                DatabaseCapacity::pause();
+                DatabaseCapacity::pause($error);
             }
             // QueryException messages embed SQL and bindings. Never report the exception.
             logger()->warning('database.operation_failed', [
@@ -40,7 +40,7 @@ $app = Application::configure(basePath: dirname(__DIR__))
         });
         $exceptions->render(function (PDOException $error, Request $request) {
             if (DatabaseCapacity::exhausted($error)) {
-                DatabaseCapacity::pause();
+                DatabaseCapacity::pause($error);
 
                 return DatabaseCapacity::response($request);
             }

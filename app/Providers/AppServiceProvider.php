@@ -31,6 +31,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $threshold = (int) config('database_pool.slow_request_ms', 1000);
+        if ($threshold > 0) {
+            $this->app['db']->whenQueryingForLongerThan($threshold, function (Connection $connection) {
+                logger()->warning('database.slow_request', [
+                    'connection' => $connection->getName(),
+                    'duration_ms' => round($connection->totalQueryDuration(), 2),
+                ]);
+            });
+        }
         $this->app->terminating(fn () => ConnectionLifecycle::release($this->app['db']));
         RateLimiter::for('catalog-pix', fn (Request $r) => Limit::perMinute(3)->by($r->ip().'|'.$r->route('slug').'|'.$r->route('id')));
         RateLimiter::for('catalog-payment-status', fn (Request $r) => Limit::perMinute(12)->by($r->ip().'|'.$r->route('slug').'|'.$r->route('id').'|'.$r->route('reference')));

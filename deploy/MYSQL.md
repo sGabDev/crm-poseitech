@@ -1,5 +1,33 @@
 # MySQL em produção e pool de conexões
 
+## Atualização de capacidade (19/10/2026)
+
+A revisão mantém os dados, as transações, o isolamento por empresa e a proteção contra repetição de escritas. Acrescenta índices compostos para vendas por estado/data e cliente, pagamentos por data sem estorno, contas pendentes, caixa aberto, itens por venda e clientes por data. A contagem de clientes recorrentes passa a ocorrer no banco, sem carregar todos os clientes na memória PHP.
+
+Execute `php artisan migrate --force` em janela de manutenção com backup verificado: criação de índices pode consumir I/O e bloquear tabelas conforme servidor e tamanho. A migration tolera execução parcialmente concluída e não recria índices existentes. Preserve as credenciais e a APP_KEY. Depois execute `php artisan config:cache` e reinicie workers de longa duração.
+
+`DB_SATURATION_COOLDOWN_SECONDS=3` controla a pausa para excesso de conexões (1040/1203) ou espera do pool (9001). O circuito não prolonga essa pausa a cada falha concorrente. `DB_CAPACITY_COOLDOWN_SECONDS=300` continua sendo a pausa para quota da conta (1226). `Retry-After` informa o prazo real restante. O circuito continua local a cada instância.
+
+`DB_SLOW_REQUEST_MS=1000` registra um alerta ao ultrapassar o tempo SQL acumulado na execução, apenas com nome da conexão e duração. Zero desativa. Não limita consultas nem registra SQL, bindings ou credenciais. Execute `php artisan poseitech:db-doctor` para verificar conexão, tempo de abertura e métricas disponíveis. A leitura de métricas pode exigir permissões e, atrás de proxy, refletir o proxy. Falhas retornam código de saída diferente de zero sem expor mensagens do driver.
+
+O `.env.example` usa sessão/cache em arquivo para uma única instância, reduzindo escritas de infraestrutura no MySQL. O `.env` existente não é substituído. Para múltiplas instâncias use Redis compartilhado para sessão/cache/locks e confirme a extensão PHP antes de ativar; arquivos locais não compartilham sessões entre servidores.
+
+### Meta de mais de 500 acessos por minuto
+
+500 requisições/minuto equivalem a aproximadamente 8,33 requisições/segundo. Uma visita pode gerar várias requisições; medir somente usuários ou `/up` não certifica capacidade do banco.
+
+O script `tests/load/database.k6.js` usa chegada constante de 600 requisições por minuto, com uma consulta HTTP real ao catálogo de uma empresa sintética por iteração. Exige k6 instalado separadamente. Em homologação isolada equivalente à produção:
+
+```bash
+k6 run -e ALLOW_LOAD_TEST=staging -e BASE_URL=https://homologacao.exemplo.com -e CATALOG_SLUG=empresa-sintetica tests/load/database.k6.js
+```
+
+Não execute contra produção. Use `RATE=1000` para ampliar a meta e `DURATION=30m` para duração maior. O teste falha com >=1% de erros, p95 >=1500 ms, checks <=99% ou iterações descartadas. São metas iniciais, ajustáveis conforme o negócio. Um catálogo bem-sucedido não certifica vendas: execute também os cenários de gravação, rollback, concorrência e indisponibilidade descritos abaixo, com tráfego de cron/filas simultâneo. Monitore CPU, locks, conexões e limites por hora durante a carga.
+
+Referências: [monitoramento de tempo SQL no Laravel](https://laravel.com/docs/12.x/database#monitoring-cumulative-query-time) e [chegada constante no k6](https://grafana.com/docs/k6/latest/using-k6/scenarios/executors/constant-arrival-rate/).
+
+Validação desta revisão: `npm test` passou com 158 testes PHP e 1.527 assertions, além das verificações de sintaxe e testes JavaScript. Os testes específicos verificam recuperação de saturação, preservação da pausa por quota, migration reaplicável e logs sem SQL/dados. O diagnóstico executou `SELECT 1` e leitura de métricas no banco configurado. A migration não foi aplicada nesse banco e o teste k6 não foi executado; capacidade e índices em MySQL real ainda precisam da validação de homologação.
+
 ## Arquitetura e auditoria
 
 O CRM usa PHP >=8.2, Laravel 12, Query Builder/Eloquent e PDO MySQL/MariaDB. HTTP entra em `public/index.php`, via Apache/PHP ou FPM. `artisan serve` é desenvolvimento. Node/Baileys não consulta MySQL. Não há Octane/Swoole nem runtime concorrente PHP no projeto. O Laravel mantém uma conexão lazy por nome na execução, compartilhada entre serviços; não há conexão ou pool por empresa. PDO não persistente fecha ao terminar a execução. Habilitar persistência PDO não cria um pool global limitado entre workers.

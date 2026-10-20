@@ -2,6 +2,8 @@
 
 Consulte também [MySQL e pool de conexões](MYSQL.md). Confirme se seu plano oferece proxy gerenciado ou permite instalar ProxySQL; não altere a porta do banco nem presuma suporte a processos próprios em hospedagem compartilhada.
 
+Para a revisão de capacidade de 19/10/2026, aplique também a migration `2026_10_19_000011_database_capacity_indexes.php` com backup e janela de manutenção, execute `php artisan poseitech:db-doctor` e siga o teste de 600 requisições/minuto descrito no guia MySQL. O teste exige homologação isolada e k6; sua aprovação para catálogo não certifica os fluxos de venda. Limites de conexões simultâneas e por hora continuam sendo definidos pelo plano da hospedagem.
+
 Este guia descreve o uso de `scripts/hostinger.php`, incluído no projeto para instalações de produção com MySQL/MariaDB e HTTPS. O script contém autodetecção de caminhos PHP da Hostinger; não é um instalador universal para SQLite ou desenvolvimento local. Para Windows, Linux, macOS, servidores próprios e contêineres, use o procedimento geral do [README](../README.md).
 
 Todos os domínios, e-mails e caminhos dos exemplos são ilustrativos. Substitua-os pelos valores do ambiente. Execute os comandos na pasta que contém `artisan`. `php` deve apontar para um executável compatível com `composer.lock`; `composer` deve utilizar esse mesmo PHP.

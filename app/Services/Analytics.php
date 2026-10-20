@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class Analytics
@@ -64,7 +65,8 @@ class Analytics
         $top = $this->t->query('sale_items')->whereIn('sale_id', (clone $sales)->select('sales.id'))->selectRaw('name, SUM(quantity) as quantity, SUM(total) as total')->groupBy('name')->orderByDesc('total')->limit(8)->get();
         $methods = (clone $payments)->where('direction', 'in')->selectRaw('method, SUM(amount) as total')->groupBy('method')->get();
         $newCustomers = $this->t->query('customers')->whereBetween('created_at', $period)->count();
-        $recurring = $this->t->query('sales')->where('status', 'completed')->whereNotNull('customer_id')->groupBy('customer_id')->havingRaw('COUNT(*) > 1')->select('customer_id')->get()->count();
+        $recurringCustomers = $this->t->query('sales')->where('status', 'completed')->whereNotNull('customer_id')->groupBy('customer_id')->havingRaw('COUNT(*) > 1')->select('customer_id');
+        $recurring = DB::query()->fromSub($recurringCustomers, 'recurring_customers')->count();
         $inactive = $this->customers('inactive')->count();
         $register = $this->t->query('cash_registers')->whereNull('closed_at')->first();
         $cash = $register ? app(Commerce::class)->expected($register) : 0;

@@ -4,6 +4,8 @@
 // These settings are applied by poseitech:pool-config, not by PDO itself.
 return [
     'cooldown' => (int) env('DB_CAPACITY_COOLDOWN_SECONDS', 300),
+    'saturation_cooldown' => (int) env('DB_SATURATION_COOLDOWN_SECONDS', 3),
+    'slow_request_ms' => (int) env('DB_SLOW_REQUEST_MS', 1000),
     'size' => (int) env('DB_POOL_SIZE', 10),
     'clients' => (int) env('DB_POOL_CLIENTS', 32),
     'wait_ms' => (int) env('DB_POOL_WAIT_TIMEOUT_MS', 3000),

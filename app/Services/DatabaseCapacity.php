@@ -22,19 +22,59 @@ class DatabaseCapacity
         return false;
     }
 
-    public static function pause(): void
+    public static function pause(?\Throwable $error = null): void
     {
-        @file_put_contents(self::path(), (string) (time() + max(1, (int) config('database_pool.cooldown', 300))), LOCK_EX);
+        // Account quotas may need minutes; a full connection pool usually needs seconds.
+        $quota = $error === null;
+        while ($error) {
+            $quota = $quota || (int) ($error->errorInfo[1] ?? 0) === 1226;
+            $error = $error->getPrevious();
+        }
+        $seconds = max(1, (int) config($quota ? 'database_pool.cooldown' : 'database_pool.saturation_cooldown', $quota ? 300 : 3));
+        // Preserve a longer pause and avoid extending it on every concurrent failure.
+        $handle = @fopen(self::path(), 'c+');
+        if ($handle === false) {
+            return;
+        }
+        try {
+            if (flock($handle, LOCK_EX)) {
+                $until = (int) stream_get_contents($handle);
+                $target = time() + $seconds;
+                if ($until < $target && ($until <= time() || $quota)) {
+                    rewind($handle);
+                    ftruncate($handle, 0);
+                    fwrite($handle, (string) $target);
+                    fflush($handle);
+                }
+                flock($handle, LOCK_UN);
+            }
+        } finally {
+            fclose($handle);
+        }
     }
 
     public static function remaining(): int
     {
-        return is_file(self::path()) ? max(0, (int) @file_get_contents(self::path()) - time()) : 0;
+        $handle = @fopen(self::path(), 'r');
+        if ($handle === false) {
+            return 0;
+        }
+        try {
+            if (! flock($handle, LOCK_SH)) {
+                return 0;
+            }
+            $remaining = max(0, (int) stream_get_contents($handle) - time());
+            flock($handle, LOCK_UN);
+
+            return $remaining;
+        } finally {
+            fclose($handle);
+        }
     }
 
     public static function response(Request $request)
     {
-        $seconds = max(60, self::remaining());
+        $seconds = max(1, self::remaining());
         $response = $request->expectsJson()
             ? response()->json(['status' => 'unavailable', 'qr' => null, 'message' => 'O banco está temporariamente indisponível. As atualizações foram pausadas. Tente novamente mais tarde.', 'retry_after' => $seconds], 503)
             : response()->view('errors.database-capacity', [], 503);
