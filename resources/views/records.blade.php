@@ -29,10 +29,16 @@
 @endif</div>
 </td>
 </tr>@empty<tr>
-<td colspan="5">
+<td colspan="{{ 2 + count(array_slice($spec['fields'],1,3,true)) + ($resource==='coupons' ? 1 : 0) }}">
 <div class="empty">
+@if(request()->filled('q') || request()->filled('status') || (request()->filled('segment') && request('segment')!=='all'))
+<h3>Nenhum cadastro encontrado</h3>
+<p>Tente outro termo ou remova os filtros para ampliar a consulta.</p>
+<a href="{{ url('/records/'.$resource) }}">Limpar filtros</a>
+@else
 <h3>Seu primeiro cadastro começa aqui</h3>
 <p>Adicione informações para começar a usar este módulo.</p>
+@endif
 </div>
 </td>
 </tr>@endforelse</tbody>

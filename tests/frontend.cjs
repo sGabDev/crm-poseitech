@@ -1,6 +1,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+// Browser APIs used by the shared navigation, absent from Node's VM.
+function browserContext(document) {
+ document.addEventListener = () => {};
+ return { document, window: { matchMedia: () => ({ matches: false, addEventListener() {} }) } };
+}
 class Element {
  constructor(){this.events={};this.children=[];this.value='';this.dataset={};}
  addEventListener(name, fn){const previous=this.events[name];this.events[name]=event=>{previous?.(event);fn(event);};}
@@ -17,7 +22,7 @@ const box=new Element();box.querySelector=s=>s==='.search-input'?input:list;
 const select=new Element();select.closest=()=>({querySelector:()=>box});
 select.options=[{value:'1',textContent:'João Silva',dataset:{search:'João Silva +55 (11) 99999-8888 123.456.789-09'}},{value:'2',textContent:'Maria',dataset:{search:'Maria'}}];select.selectedOptions=[];
 const document={querySelector:()=>null,querySelectorAll:selector=>selector==='[data-phone]'?[phone]:selector==='[data-search-select]'?[select]:[],createElement:()=>new Element()};
-vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{document,Intl,Event:class{constructor(type){this.type=type;}},setTimeout});
+vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{...browserContext(document),Intl,Event:class{constructor(type){this.type=type;}},setTimeout});
 for(const digit of '11999998888'){phone.value+=digit;phone.selectionStart=phone.value.length;phone.events.input();}
 assert.equal(phone.value,'+55 (11) 99999-8888');
 phone.value='(21) 3333-4444';phone.selectionStart=phone.value.length;phone.events.input();
@@ -26,11 +31,16 @@ for(const term of ['joao','11999998888','12345678909']){
  input.value=term;input.events.input();assert.equal(list.children.length,1);list.children[0].events.click();assert.equal(select.value,'1');assert.equal(input.value,'João Silva');assert.equal(list.hidden,true);
 }
 input.value='inexistente';input.events.input();assert.equal(select.value,'');assert.ok(input.validationMessage);assert.equal(list.children.length,0);
+// Focusing the search field renders the list again: Escape must close it afterwards.
+input.focus=()=>input.events.focus();
+let escaped=false;
+list.events.keydown({key:'Escape',preventDefault(){escaped=true;},stopPropagation(){}});
+assert.equal(escaped,true);assert.equal(list.hidden,true);
 console.log('Busca por nome, telefone e CPF; seleção e máscara durante digitação: OK');
 
 // Exercise the real sale handlers: automatic values must stop overwriting an edit.
 const nodes={};
-for(const id of ['auto-payment','discount','extra','subtotal','sale-total','sale-pending','pending-row','wallet-row','wallet-remaining','wallet-current','wallet-current-row','barcode','barcode-quantity','barcode-message','allow-negative-stock','reset-payment','add-item','add-payment','use-balance'])nodes['#'+id]=new Element();
+for(const id of ['auto-payment','discount','extra','subtotal','sale-total','sale-pending','pending-row','pending-row span','wallet-row','wallet-remaining','wallet-current','wallet-current-row','barcode','barcode-quantity','barcode-message','allow-negative-stock','reset-payment','add-item','add-payment','use-balance'])nodes['#'+id]=new Element();
 nodes['#auto-payment'].value='1';nodes['#discount'].value='0';nodes['#extra'].value='0';nodes['#use-balance'].checked=true;
 const product={value:'1',selectedOptions:[{value:'1',textContent:'Produto A',dataset:{price:'10000',code:'789123',stock:'10',type:'product'}}]};product.options=product.selectedOptions;nodes['#barcode-quantity'].value='3';nodes['#barcode'].focus=()=>{};nodes['#barcode'].select=()=>{};
 const quantity={value:'2'};
@@ -44,7 +54,7 @@ form.querySelectorAll=s=>s==='.sale-line'?[saleLine]:s==='.payment-line'?[paymen
 form.querySelector=s=>s==='[name=customer_id]'?saleCustomer:s==='.product-select'?product:null;
 nodes['#sale-form']=form;
 const saleDocument={querySelector:s=>nodes[s]||null,querySelectorAll:s=>s==='.sale-line'?[saleLine]:s==='.payment-line'?[paymentLine]:[]};
-vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{document:saleDocument,Intl,setTimeout,confirm:()=>false});
+vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{...browserContext(saleDocument),Intl,setTimeout,confirm:()=>false});
 assert.equal(received.value,'200.00');assert.equal(received.readOnly,false);
 received.value='12.34';form.events.input({target:received});assert.equal(received.value,'12.34');assert.equal(nodes['#auto-payment'].value,'0');
 nodes['#discount'].value='10%';nodes['#extra'].value='5%';form.events.input({target:{matches:()=>false}});assert.equal(received.value,'12.34');
@@ -73,7 +83,7 @@ console.log('Item avulso, saldo atual, leitor com quantidade e recusa de estoque
  previewNodes['#discount'].value='0';previewNodes['#extra'].value='0';previewNodes['#auto-payment'].value='1';
  let scheduled;let result={ok:true,json:async()=>({discount:2000,label:'Desconto validado'})};
  const previewDocument={querySelector:selector=>previewNodes[selector]||null,querySelectorAll:saleDocument.querySelectorAll};
- vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{document:previewDocument,Intl,setTimeout:fn=>(scheduled=fn,1),clearTimeout(){},fetch:async()=>result,FormData:class{},confirm:()=>false});
+ vm.runInNewContext(fs.readFileSync('public/assets/app.js','utf8'),{...browserContext(previewDocument),Intl,setTimeout:fn=>(scheduled=fn,1),clearTimeout(){},fetch:async()=>result,FormData:class{},confirm:()=>false});
  let blocked=false;previewForm.events.submit({preventDefault(){blocked=true;}});assert.equal(blocked,true);
  await scheduled();assert.match(previewNodes['#sale-total'].textContent,/180,00/);assert.equal(received.value,'180.00');assert.equal(previewNodes['#coupon-summary'].hidden,false);
  result={ok:false,json:async()=>({errors:{coupon:['Cupom vencido']}})};

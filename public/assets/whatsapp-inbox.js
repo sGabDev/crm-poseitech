@@ -11,6 +11,7 @@
   let sending = false, detailsDirty = false, searching = false, hasOlder = false, readBusy = false;
   let renderedSignature = '';
   let watching = false, watchCursor = 0, watchTimer, watchController, queuedSync = false;
+  let failures = 0, pauseUntil = 0;
   const heldUnread = new Set();
   const drafts = new Map();
   const statuses = { open: 'Em aberto', pending: 'Aguardando cliente', resolved: 'Resolvido' };
@@ -30,23 +31,31 @@
         headers: { Accept: 'application/json', 'X-CSRF-TOKEN': root.dataset.token, ...(data instanceof FormData || method === 'GET' ? {} : { 'Content-Type': 'application/json' }) },
         ...(method === 'GET' ? {} : { body: data instanceof FormData ? data : JSON.stringify(data) }) });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(Object.values(result.errors || {}).flat().join(' ') || result.message || (response.status === 419 ? 'Sua sessão expirou. Atualize a página.' : 'Não foi possível concluir. Tente novamente.'));
+      if (!response.ok || response.redirected) {
+        if ([401,403,419].includes(response.status) || response.redirected) stopped = true;
+        const retry = response.headers?.get('Retry-After');
+        const retryMs = /^\d+$/.test(retry || '') ? Number(retry) * 1000 : Math.max(0, Date.parse(retry) - Date.now()) || 0;
+        if (retryMs || result.retry_after) pauseUntil = Math.max(pauseUntil, Date.now() + Math.max(retryMs, Number(result.retry_after || 0) * 1000));
+        throw new Error(Object.values(result.errors || {}).flat().join(' ') || result.message || (response.status === 419 ? 'Sua sessão expirou. Atualize a página.' : 'Não foi possível concluir. Tente novamente.'));
+      }
       return result;
     } catch (error) {
       if (error.name === 'AbortError') throw new Error('O servidor demorou a responder. Confira o histórico antes de tentar enviar novamente.');
       throw error;
     } finally { clearTimeout(timeout); }
   }
-  function schedule(delay = 30000) { clearTimeout(timer); if (!stopped && !document.hidden) timer = setTimeout(() => refresh(true), delay); }
+  function schedule(delay = 60000) { clearTimeout(timer); if (!stopped && !document.hidden) timer = setTimeout(() => refresh(true), Math.max(delay, pauseUntil - Date.now())); }
   async function refresh(sync = false) {
     if (busy) { queued = true; queuedSync = queuedSync || sync; return; }
     if (document.hidden || stopped) return;
+    if (Date.now() < pauseUntil) { schedule(); return; }
     busy = true;
     const requested = selected;
     try {
       const result = await api('/state', { selected, q: $('inbox-search').value, filter, tag: $('inbox-tag-filter').value, sync: sync && root.dataset.bot === '1' });
       if (requested !== selected) { queued = true; return; }
       state = result;
+      failures = 0;
       watchCursor = Math.max(watchCursor, Number(result.cursor || 0));
       renderList();
       if (sync) {
@@ -70,19 +79,20 @@
       } else if (selected) {
         selected = null; messages = []; $('inbox-welcome').hidden = false; $('inbox-active-chat').hidden = true; root.classList.remove('mobile-chat'); details(false);
       }
-      schedule(result.connection?.more ? 3000 : root.dataset.live === '1' ? 60000 : 30000);
-    } catch (error) { alert(error.message); schedule(45000); }
+      schedule(result.connection?.more ? 3000 : 60000);
+    } catch (error) { failures++; alert(error.message); schedule(Math.min(180000, 45000 * 2 ** Math.min(failures - 1, 2))); }
     finally { busy = false; if (queued) { const syncQueued = queuedSync; queued = queuedSync = false; refresh(syncQueued); } startWatch(); }
   }
   async function startWatch() {
     if (root.dataset.live !== '1' || root.dataset.bot !== '1' || stopped || document.hidden || watching || watchTimer) return;
+    if (Date.now() < pauseUntil) { watchTimer = setTimeout(() => { watchTimer = null; startWatch(); }, pauseUntil - Date.now()); return; }
     watching = true; watchController = new AbortController(); let delay = 1000;
     try {
       const result = await api('/watch', { after: watchCursor }, 'POST', watchController);
       if (result.disabled) { delay = 60000; return; }
       if (!stopped && !document.hidden && Number(result.cursor) > watchCursor) await refresh(true);
     } catch { delay = 15000; }
-    finally { watching = false; watchController = null; if (!stopped && !document.hidden) watchTimer = setTimeout(() => { watchTimer = null; startWatch(); }, delay); }
+    finally { watching = false; watchController = null; if (!stopped && !document.hidden) watchTimer = setTimeout(() => { watchTimer = null; startWatch(); }, Math.max(delay, pauseUntil - Date.now())); }
   }
   function renderList() {
     $('inbox-total').textContent = state.conversations.length === 100 ? '100+' : state.conversations.length;

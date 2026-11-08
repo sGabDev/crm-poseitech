@@ -39,7 +39,7 @@ body:not(.inbox-page) button,body:not(.inbox-page) .button{border-radius:7px;box
 body:not(.inbox-page) .secondary{background:#fff;border-color:#dbe1e7;color:#344150}
 body:not(.inbox-page) label{font-size:13px;gap:6px}
 body:not(.inbox-page) input,body:not(.inbox-page) select,body:not(.inbox-page) textarea{border-color:#dbe1e7;border-radius:7px;font-size:14px}
-body:not(.inbox-page) :is(a,button,input,select,textarea,summary):focus-visible{outline:2px solid #278568;outline-offset:3px}
+body:not(.inbox-page) :is(a,button,input,select,textarea,summary,.table-wrap):focus-visible{outline:2px solid #278568;outline-offset:3px}
 body:not(.inbox-page) .filters{background:#f8f9fb;border:1px solid var(--line);border-radius:8px;padding:16px;gap:12px}
 body:not(.inbox-page) table{font-size:13px}
 body:not(.inbox-page) th{background:#f8f9fb;color:#5c6877;font-size:12px;text-transform:none;letter-spacing:0;font-weight:600;padding:12px 14px}
@@ -87,6 +87,7 @@ body:not(.inbox-page) input:is([type=checkbox],[type=radio]){flex-shrink:0}
 body:not(.inbox-page) input[type=file]{padding:8px;font-size:12px}
 body:not(.inbox-page) input[type=file]::file-selector-button{padding:6px 10px;margin-right:10px;border:1px solid #dbe1e7;border-radius:5px;background:#f4f7f5;color:#263c31;font:inherit;cursor:pointer}
 body:not(.inbox-page) :is(button,.button):disabled{cursor:not-allowed}
+body:not(.inbox-page) form[aria-busy=true] :is(button,input[type=submit])[aria-disabled=true]{cursor:progress;opacity:.65}
 body:not(.inbox-page) .table-wrap{width:100%;min-width:0;max-width:100%;overflow:auto;overscroll-behavior-x:contain;scrollbar-width:thin}
 body:not(.inbox-page) .table-wrap table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 body:not(.inbox-page) :is(th,td){vertical-align:middle}
@@ -104,3 +105,35 @@ body:not(.inbox-page) .support-banner{flex-wrap:wrap;gap:8px}
 @media(max-width:1000px){body:not(.inbox-page) .form-grid{gap:16px}body:not(.inbox-page) .topbar{gap:12px}body:not(.inbox-page) .global-search{max-width:100%}}
 @media(max-width:600px){body:not(.inbox-page) .app>main{padding:18px 12px 28px}body:not(.inbox-page) .page-heading{margin-bottom:18px}body:not(.inbox-page) .page-heading>.button{min-height:40px}body:not(.inbox-page) .form-grid{grid-template-columns:minmax(0,1fr)}body:not(.inbox-page) .filters{padding:12px}body:not(.inbox-page) .filters label{max-width:none;flex-basis:130px}body:not(.inbox-page) .table-wrap table{min-width:520px}body:not(.inbox-page) .table-wrap .statement-table{min-width:460px}body:not(.inbox-page) td{padding:12px}body:not(.inbox-page) .pagination{gap:8px}body:not(.inbox-page) .pagination>span{flex-basis:100%}body:not(.inbox-page) .module-grid,body:not(.inbox-page) .permission-grid{grid-template-columns:minmax(0,1fr)}}
 @media print{.ticket-workspace{height:auto!important;display:block!important}.ticket-workspace>.support-chat{overflow:visible!important;height:auto!important}.ticket-controls,.ticket-composer{display:none!important}body:not(.inbox-page) .table-wrap{overflow:visible}body:not(.inbox-page) .table-wrap table{min-width:0}}
+
+/* Consistent spacing and interaction across the CRM. */
+body:not(.inbox-page){--bg:#f6f8fa;--line:#e2e7ec;--radius:12px;background:var(--bg)}
+body:not(.inbox-page) .card,body:not(.inbox-page) .kpi,body:not(.inbox-page) .auth-card{border-color:var(--line);border-radius:var(--radius);box-shadow:0 2px 8px #202a3504}
+body:not(.inbox-page) .page-heading h1{line-height:1.2;text-wrap:balance}
+body:not(.inbox-page) .page-heading p{max-width:70ch}
+body:not(.inbox-page) .sidebar nav>a{transition:background .15s,color .15s}
+body:not(.inbox-page) .sidebar nav>a.active{box-shadow:inset 3px 0 #176b55;background:#e8f3ed}
+body:not(.inbox-page) input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=hidden]),body:not(.inbox-page) select,body:not(.inbox-page) textarea{border-radius:10px;transition:border-color .15s,box-shadow .15s;max-width:100%}
+body:not(.inbox-page) input:focus,body:not(.inbox-page) select:focus,body:not(.inbox-page) textarea:focus{border-color:#238568;box-shadow:0 0 0 3px #176b5514}
+body:not(.inbox-page) input[type=checkbox],body:not(.inbox-page) input[type=radio]{accent-color:#176b55}
+body:not(.inbox-page) button:disabled,body:not(.inbox-page) .button[aria-disabled=true]{opacity:.55;cursor:not-allowed;box-shadow:none}
+body:not(.inbox-page) .table-wrap{border-radius:12px;scrollbar-width:thin;overscroll-behavior-x:contain}
+body:not(.inbox-page) th{color:#536170;background:#f7f9fb}
+body:not(.inbox-page) tbody tr:hover{background:#f7faf9}
+body:not(.inbox-page) .empty{border-radius:12px;background:#f8fbf9;color:#52695c}
+body:not(.inbox-page) .filters{border-radius:10px;background:#f8fafb}
+body:not(.inbox-page) .notice{line-height:1.6;border-radius:12px}
+@media(max-width:600px){body:not(.inbox-page) .page-heading{align-items:flex-start;gap:14px;flex-wrap:wrap}body:not(.inbox-page) .page-heading h1{font-size:27px}body:not(.inbox-page) .filters label{min-width:0;flex:1 1 150px}body:not(.inbox-page) .filters button{min-height:44px}body:not(.inbox-page) input:not([type=checkbox]):not([type=radio]),body:not(.inbox-page) select,body:not(.inbox-page) textarea{font-size:16px}body:not(.inbox-page) .card{padding:18px}body:not(.inbox-page) .auth-card{padding:24px}}
+
+/* Quiet dashboard: keep results prominent and secondary actions compact. */
+body:not(.inbox-page) .global-search{margin-left:auto;min-width:0;width:min(380px,48%)}
+body:not(.inbox-page) .card,body:not(.inbox-page) .kpi{min-width:0}
+body:not(.inbox-page) .kpi{align-content:start}
+body:not(.inbox-page) .kpi strong{line-height:1.25;margin:2px 0}
+body:not(.inbox-page) .dashboard-summary{display:flex;flex-wrap:wrap;gap:8px 20px;margin:0 0 20px}
+body:not(.inbox-page) .dashboard-summary .badge{background:transparent;border:0;padding:0;color:var(--muted);font-size:13px}
+body:not(.inbox-page) .dashboard-opportunity{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px 22px;box-shadow:none;gap:16px}
+body:not(.inbox-page) .dashboard-opportunity h2{font-size:15px;color:var(--ink);margin:0;font-weight:600}
+body:not(.inbox-page) .dashboard-opportunity .button{flex-shrink:0}
+@media(max-width:600px){body:not(.inbox-page) .dashboard-opportunity{padding:16px;flex-wrap:wrap}body:not(.inbox-page) .dashboard-opportunity .button{width:100%}}
+@media(max-width:520px){body:not(.inbox-page) .global-search{width:auto}}

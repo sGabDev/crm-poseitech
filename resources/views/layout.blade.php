@@ -12,6 +12,9 @@
 <link rel="stylesheet" href="{{ asset('assets/minimal.css') }}?v={{ filemtime(public_path('assets/minimal.css')) }}">
 <script src="{{ asset('assets/app.js') }}?v={{ filemtime(public_path('assets/app.js')) }}" defer>
 </script>
+<script src="{{ asset('assets/ux.js') }}?v={{ filemtime(public_path('assets/ux.js')) }}" defer></script>
+<link rel="stylesheet" href="{{ asset('assets/legal.css') }}?v={{ filemtime(public_path('assets/legal.css')) }}">
+<script src="{{ asset('assets/privacy.js') }}?v={{ filemtime(public_path('assets/privacy.js')) }}" defer></script>
 </head>
 <body class="{{ View::hasSection('immersive') ? 'inbox-page' : '' }} @yield('body-class')">
 <a class="skip-link" href="#main-content">Pular para o conteúdo</a>
@@ -81,9 +84,7 @@
 <form class="global-search" action="{{ url('/search') }}">
 <span>⌕</span>
 <input name="q" placeholder="Buscar clientes, vendas, produtos..." aria-label="Busca global" value="{{ request('q') }}">
-<kbd>Buscar</kbd>
 </form>
-<span class="today">{{ now()->format('d/m/Y') }}</span>
 </header>
 <button class="nav-backdrop" type="button" aria-label="Fechar menu" hidden></button>
 @if(session('support_company'))<div class="support-banner">Acesso de suporte ativo. Ações registradas em auditoria.<form method="post" action="{{ url('/admin/leave') }}">@csrf<button>Encerrar suporte</button>
@@ -108,5 +109,6 @@
 </footer>
 </div>
 @endif
+@include('components.legal-footer')
 </body>
 </html>

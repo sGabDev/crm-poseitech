@@ -2,6 +2,8 @@
   "name": "poseitech-crm",
   "private": true,
   "scripts": {
+    "test:load": "node scripts/load-local.cjs",
+    "test:load:mysql": "node scripts/load-mysql.cjs",
     "check": "node scripts/check.cjs",
     "test": "node scripts/check.cjs --test",
     "whatsapp": "node services/whatsapp/server.mjs",

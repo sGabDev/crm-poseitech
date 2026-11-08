@@ -213,11 +213,26 @@ class SettingsController extends Controller
 
             return back()->with('mail_run', true)->with('success', 'Processando pendentes. Mantenha esta página aberta; o cron continua a fila se você sair.');
         }
-        $email = $d['action'] === 'send' ? $this->t->find('email_logs', (int) ($d['id'] ?? 0)) : $this->t->query('email_logs')->where('status', 'pending')->orderBy('id')->first();
-        $status = $email ? $queue->send($email->id, $this->t->company, $d['action'] === 'send') : null;
         if ($d['action'] === 'process') {
-            return response()->json(['processed' => (bool) $email, 'status' => $status]);
+            // A small bounded batch shares one connection instead of one HTTP
+            // request (and connection) per email. Always retain the tenant scope.
+            $emails = $this->t->query('email_logs')->where('status', 'pending')->orderBy('id')->limit(5)->get();
+            $deadline = microtime(true) + 10;
+            $count = 0;
+            $status = null;
+            foreach ($emails as $email) {
+                if ($count && microtime(true) >= $deadline) {
+                    break;
+                }
+                $status = $queue->send($email->id, $this->t->company);
+                $count++;
+            }
+
+            return response()->json(['processed' => $count > 0, 'count' => $count, 'status' => $status,
+                'has_more' => $this->t->query('email_logs')->where('status', 'pending')->exists()]);
         }
+        $email = $this->t->find('email_logs', (int) ($d['id'] ?? 0));
+        $status = $queue->send($email->id, $this->t->company, true);
         $this->t->audit('mail.manual_send', 'email_logs', $email->id);
 
         return back()->with('success', 'Resultado da tentativa: '.$status.'.');

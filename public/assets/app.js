@@ -11,7 +11,7 @@ function enhanceSearchSelect(select) {
  if(!matches.length)list.textContent='Nenhum resultado encontrado.';list.hidden=false;};
  input.addEventListener('input',()=>{select.value='';input.setCustomValidity(input.value?'Selecione um resultado da lista.':'');select.dispatchEvent(new Event('change',{bubbles:true}));render();});input.addEventListener('focus',render);
  input.addEventListener('keydown',event=>{if(event.key==='Escape')list.hidden=true;if(event.key==='ArrowDown'){event.preventDefault();list.querySelector('button')?.focus();}if(event.key==='Enter'&&!list.hidden){event.preventDefault();list.querySelector('button')?.click();}});
- list.addEventListener('keydown',event=>{if(event.key==='ArrowDown'){event.preventDefault();event.target.nextElementSibling?.focus();}if(event.key==='ArrowUp'){event.preventDefault();(event.target.previousElementSibling||input).focus();}if(event.key==='Escape'){list.hidden=true;input.focus();}});
+ list.addEventListener('keydown',event=>{if(event.key==='ArrowDown'){event.preventDefault();event.target.nextElementSibling?.focus();}if(event.key==='ArrowUp'){event.preventDefault();(event.target.previousElementSibling||input).focus();}if(event.key==='Escape'){event.preventDefault();event.stopPropagation();input.focus();list.hidden=true;}});
  box.addEventListener('focusout',()=>setTimeout(()=>{if(!box.contains(document.activeElement))list.hidden=true;},0));
 }
 document.querySelectorAll('[data-search-select]').forEach(enhanceSearchSelect);
@@ -27,6 +27,15 @@ navigationToggle?.addEventListener('click',()=>setNavigationOpen(!navigationSide
 navigationBackdrop?.addEventListener('click',()=>{setNavigationOpen(false);navigationToggle?.focus();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&navigationSidebar?.classList.contains('open')){setNavigationOpen(false);navigationToggle?.focus();}});
 window.matchMedia('(min-width: 801px)').addEventListener('change',event=>{if(event.matches)setNavigationOpen(false);});
+// Keep links in the off-screen mobile menu out of the keyboard focus order.
+const mobileNavigation = window.matchMedia('(max-width: 800px)');
+const syncNavigationFocus = () => {
+ if (navigationSidebar) navigationSidebar.inert = mobileNavigation.matches && !navigationSidebar.classList.contains('open');
+};
+if (navigationSidebar) new MutationObserver(syncNavigationFocus).observe(navigationSidebar, {attributes:true, attributeFilter:['class']});
+mobileNavigation.addEventListener('change',syncNavigationFocus);
+syncNavigationFocus();
+
 document.querySelectorAll('[data-print]').forEach(button=>button.addEventListener('click',()=>window.print()));
 document.querySelectorAll('[data-flow-toggle]').forEach(button=>button.addEventListener('click',()=>{const detail=document.getElementById(button.dataset.flowToggle);detail.hidden=!detail.hidden;button.setAttribute('aria-expanded',String(!detail.hidden));}));
 document.querySelectorAll('form[data-confirm]').forEach(form=>form.addEventListener('submit',e=>{if(!confirm(form.dataset.confirm))e.preventDefault();}));
@@ -76,4 +85,4 @@ if(saleForm){
 }
 
 const queueRunner=document.querySelector('[data-mail-process]');
-if(queueRunner){(async()=>{let processed=0;try{while(true){const response=await fetch(queueRunner.dataset.mailProcess,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRF-TOKEN':queueRunner.dataset.token},body:JSON.stringify({action:'process'})});if(!response.ok)throw new Error();const result=await response.json();if(!result.processed)break;processed++;queueRunner.textContent='Tentativas realizadas: '+processed;}queueRunner.textContent='Processamento concluído: '+processed+' tentativa(s). Atualize a página para consultar os resultados.';}catch{queueRunner.textContent='Processamento interrompido. Consulte os pendentes e tente novamente; a fila também é processada pelo cron.';}})();}
+if(queueRunner){(async()=>{let processed=0;try{while(true){const response=await fetch(queueRunner.dataset.mailProcess,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRF-TOKEN':queueRunner.dataset.token},body:JSON.stringify({action:'process'})});if(!response.ok)throw new Error();const result=await response.json();if(!result.processed)break;processed+=Number(result.count)||1;queueRunner.textContent='Tentativas realizadas: '+processed;if(result.has_more===false)break;}queueRunner.textContent='Processamento concluído: '+processed+' tentativa(s). Atualize a página para consultar os resultados.';}catch{queueRunner.textContent='Processamento interrompido. Consulte os pendentes e tente novamente; a fila também é processada pelo cron.';}})();}

@@ -45,4 +45,5 @@
     @endif
     <nav class="store-bottom-nav" aria-label="Navegação da loja"><a href="#catalog-menu"><span>⌂</span>Início</a><a href="#store-highlights"><span>◇</span>Destaques</a><button type="button" data-open-dialog="store-profile"><span>♙</span>Perfil</button></nav>
 </div>
+@include('components.seller-identity')
 @endsection

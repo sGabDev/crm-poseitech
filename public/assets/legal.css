@@ -1,0 +1,37 @@
+[hidden]{display:none!important}
+.legal-footer{display:block;position:relative;clear:both;background:#fff;color:#263443;padding:24px;line-height:1.6;border-top:1px solid #8995a3}
+.legal-footer nav{display:flex;flex-wrap:wrap;gap:16px}.legal-footer a,.legal-document a,.privacy-panel a{color:#12563f;text-decoration:underline}
+.legal-footer p{margin:6px 0}.legal-document{max-width:850px;margin:auto;background:#fff;color:#263443;padding:24px;line-height:1.75}.legal-document h2{margin-top:28px}
+.privacy-panel{position:fixed;bottom:16px;right:16px;max-width:520px;max-height:70dvh;overflow:auto;background:#fff;color:#263443;border:2px solid #263443;padding:20px;z-index:10000;box-shadow:0 4px 24px #0003}
+:focus-visible{outline:3px solid #175cd3!important;outline-offset:3px!important}
+body:not(.inbox-page) .muted,body:not(.inbox-page) small.muted{color:#526171}
+body:not(.inbox-page) input::placeholder,body:not(.inbox-page) textarea::placeholder{color:#586474;opacity:1}
+.legal-footer button,.privacy-panel button{background:#176b55;color:#fff;border:2px solid #176b55;min-height:44px;padding:8px 14px}
+@media(max-width:600px){.privacy-panel{left:8px;right:8px;bottom:8px;max-width:none}.legal-document{padding:16px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+.seller-identity{margin:24px 0;padding:20px;background:#fff;color:#263443;border:1px solid #8995a3;line-height:1.6}.seller-identity a{color:#12563f;text-decoration:underline}
+/* Privacy and legal surfaces share the site's green palette. */
+.legal-footer{border-top:1px solid #e1e9e5;background:#f9fbfa;padding:28px clamp(18px,4vw,38px);color:#52635c;font-size:12px}
+.legal-footer nav{gap:10px 22px;align-items:center;margin-bottom:16px}
+.legal-footer a{text-underline-offset:4px;text-decoration-color:#a8c7b8}
+.legal-footer button{background:#eaf4ef;color:#155b45;border:1px solid #cfdfd6;border-radius:10px;font:inherit;font-weight:600;box-shadow:none}
+.legal-footer button:hover{background:#dceee3;color:#124c39}
+.legal-document{border:1px solid #e1e9e5;border-radius:18px;padding:clamp(20px,4vw,42px);box-shadow:0 8px 32px #153b2610;overflow-wrap:anywhere}
+.legal-document h1{font-size:clamp(26px,5vw,36px);line-height:1.2}.legal-document h2{color:#174c39;line-height:1.4}
+.privacy-panel{box-sizing:border-box;bottom:max(20px,env(safe-area-inset-bottom));right:max(20px,env(safe-area-inset-right));width:480px;max-width:calc(100vw - 40px);max-height:calc(100dvh - 40px);padding:24px;border:1px solid #d7e5dc;border-radius:20px;background:#fff;color:#33483e;box-shadow:0 20px 70px #102e2830,0 3px 12px #102e2810;font:14px/1.65 'Segoe UI',Arial,sans-serif;overscroll-behavior:contain;scrollbar-width:thin;animation:privacy-enter .2s ease-out}
+.privacy-heading{display:flex;align-items:center;gap:12px}.privacy-heading>div{flex:1;min-width:0}.privacy-icon{display:grid;place-items:center;width:44px;height:44px;flex-shrink:0;border-radius:14px;background:#eaf4ef;color:#176b55;font-size:28px}.privacy-eyebrow{font-size:10px;font-weight:700;letter-spacing:1.6px;color:#176b55}.privacy-panel h2{font-size:18px;line-height:1.35;letter-spacing:-.4px;margin:3px 0 0;color:#193d2d}.privacy-panel>p{margin:18px 0;color:#52635c;font-size:13px}
+.privacy-panel .privacy-dismiss{display:grid;place-items:center;align-self:flex-start;flex-shrink:0;width:44px;height:44px;min-height:44px;padding:0;border:1px solid #e1e9e5;border-radius:50%;background:#f7faf8;color:#52635c;font-size:24px;box-shadow:none}.privacy-panel .privacy-dismiss:hover{background:#eaf4ef;color:#174c39}
+.privacy-details{background:#f5f9f6;border:1px solid #e1eae4;border-radius:12px;padding:0 14px}.privacy-details summary{padding:12px 0;cursor:pointer;font-size:13px;font-weight:650;color:#24533d}.privacy-details dl{margin:0 0 14px}.privacy-details dt{font-size:12px;font-weight:650;margin-top:12px}.privacy-details dt span{display:block;color:#52635c;font-size:11px;font-weight:400}.privacy-details dd{margin:4px 0 12px;font-size:12px;color:#52635c}
+.privacy-actions{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:20px}.privacy-actions a{font-size:12px;text-underline-offset:3px}.privacy-actions button{flex-shrink:0;border-radius:10px;font:600 13px/1.4 'Segoe UI',Arial,sans-serif;box-shadow:none}.privacy-actions button:hover{background:#10533f;border-color:#10533f}.privacy-note{display:block;font-size:11px;color:#52635c;line-height:1.5;margin-top:14px}
+@keyframes privacy-enter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:600px){.privacy-panel{left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));width:auto;max-width:none;padding:18px;border-radius:16px;max-height:calc(100dvh - 24px)}.privacy-panel h2{font-size:16px}.privacy-actions{flex-direction:column-reverse;align-items:stretch;gap:12px}.privacy-actions a{text-align:center}.legal-footer nav{align-items:flex-start;gap:12px 18px}.legal-footer button{width:100%}}
+
+/* The legal footer is a sibling of the CRM shell, alongside its fixed sidebar. */
+.legal-footer{box-sizing:border-box;min-width:0;max-width:100%;margin:0;text-align:left;overflow-wrap:anywhere}
+.legal-footer nav{padding:0;justify-content:flex-start}
+.legal-footer nav>a{display:inline-block;max-width:100%;line-height:1.6}
+.legal-footer nav>button{max-width:100%;white-space:normal;text-align:left}
+body:not(.inbox-page)>.sidebar~.legal-footer{margin-left:236px}
+@media(max-width:800px){body:not(.inbox-page)>.sidebar~.legal-footer{margin-left:0}}
+@media print{.legal-footer{display:none!important}}

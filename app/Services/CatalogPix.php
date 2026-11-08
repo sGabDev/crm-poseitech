@@ -47,7 +47,7 @@ class CatalogPix
                 return $c;
             }
             try {
-                DeliveryQueue::releaseConnection();
+                // Keep the request's connection for the subsequent Pix updates.
                 $p = $this->mp->api('POST', '/v1/payments', json_decode(Crypt::decryptString($c->pix_payload), true), $c->reference);
                 if (! ctype_digit((string) ($p['id'] ?? '')) || ($p['external_reference'] ?? '') !== $c->reference || (string) ($p['collector_id'] ?? '') !== $c->collector_id || (int) round(($p['transaction_amount'] ?? 0) * 100) !== $c->amount || ($p['currency_id'] ?? '') !== 'BRL' || ! array_key_exists('live_mode', $p) || (bool) $p['live_mode'] !== ($c->mode === 'production')) {
                     throw new \RuntimeException('PIX_RESPONSE');

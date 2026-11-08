@@ -16,6 +16,8 @@ class DeliveryQueue
 
     public static function releaseConnection(): void
     {
+        // Only at the end of a daemon batch, before sleeping. Calling this
+        // between a send and its result update creates another MySQL connection.
         $connection = DB::connection();
         if ($connection->transactionLevel() === 0 && $connection->getDatabaseName() !== ':memory:') {
             $connection->disconnect();
@@ -74,7 +76,7 @@ class DeliveryQueue
                     }
                 } catch (\Throwable $e) {
                     if (DatabaseCapacity::exhausted($e)) {
-                        DatabaseCapacity::pause();
+                        DatabaseCapacity::pause($e);
                         throw $e;
                     }
                     Log::warning('delivery.worker_failed', ['channel' => $channel, 'message_id' => $message->id, 'exception_class' => get_class($e)]);

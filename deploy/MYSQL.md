@@ -1,5 +1,19 @@
 # MySQL em produção e pool de conexões
 
+## Revisão para Hostinger — 08/11/2026
+
+Veja [CONEXOES-HOSTINGER.md](CONEXOES-HOSTINGER.md) para o inventário de acessos, host confirmado, remoção de reconexões intermediárias, lotes de e-mail e redução de polling. Esta revisão preserva PHP/MySQL na Hostinger e não ativa pool nem persistência. Não exige migrations e não executou testes contra o banco real. Os resultados de carga abaixo são históricos.
+
+## Validação real e recuperação — 02/11/2026
+
+O servidor configurado respondeu como MariaDB 11.8.9. A conta possui **MAX_CONNECTIONS_PER_HOUR=500** e o servidor informa `max_user_connections=75`. Essa quota por hora é um impedimento concreto para o volume pedido com uma conexão nova por requisição, mesmo havendo capacidade global livre. O diagnóstico `php artisan poseitech:db-doctor` agora também mostra os limites numéricos disponíveis em `SHOW GRANTS`, sem exibir contas, grants ou credenciais. Um limite ausente nessa leitura não comprova ausência de restrições no provedor.
+
+A rodada com quatro conexões reutilizadas e cópias temporárias do esquema passou com 110 empresas, 1.100 clientes, 110 vendas, 110 verificações de idempotência e 110 rollbacks, totalizando 10.792 consultas em 145,57 s. O teste não usa HTTP nem compartilha as tabelas temporárias entre processos. Detalhes e limites em [TESTE-DE-CARGA.md](TESTE-DE-CARGA.md).
+
+Corrigido o caminho de falha dos envios que chamava a pausa padrão de 300 s mesmo para saturação: agora preserva o código original e o cooldown curto de 3 s. Falhas repetidas não prolongam uma pausa em andamento. Novos acessos HTTP podem verificar a recuperação com `SELECT 1`, sob lock local e intervalo `DB_CAPACITY_RECHECK_SECONDS=30`; se o banco responder, a pausa local é liberada. `Retry-After` fica limitado pelo intervalo de rechecagem. A verificação real liberou uma pausa local simulada de 300 s em 162 ms. Não houve simulação de esgotamento da quota real nem repetição automática de vendas.
+
+Para evitar suspensão imposta pelo provedor, aumente/remova a quota horária ou ative e valide um pool real suportado pela hospedagem. As correções de recuperação não alteram `MAX_CONNECTIONS_PER_HOUR` e não garantem disponibilidade quando a conta esgota a quota. O proxy descrito abaixo permanece uma configuração preparada, sem ativação automática. Resultados antigos nas seções seguintes registram revisões anteriores; a medição mais recente é a desta seção.
+
 ## Atualização de capacidade (19/10/2026)
 
 A revisão mantém os dados, as transações, o isolamento por empresa e a proteção contra repetição de escritas. Acrescenta índices compostos para vendas por estado/data e cliente, pagamentos por data sem estorno, contas pendentes, caixa aberto, itens por venda e clientes por data. A contagem de clientes recorrentes passa a ocorrer no banco, sem carregar todos os clientes na memória PHP.
@@ -44,7 +58,7 @@ Inventário do acesso SQL (inclui consultas globais intencionais):
 | Catálogo, portal e pagamento público | Empresa resolvida por slug, sessão validada, hash/token ou referência pública; consultas subsequentes respeitam empresa. Portal verifica assinatura/hash; webhook verifica assinatura antes de processar. |
 | Admin, autenticação, models Company/Plan/User | Tabelas globais, acesso de plataforma autorizado ou usuário autenticado; sessões removidas por usuário. |
 | `SupportTicketController` | Ticket filtrado por empresa antes de ler mensagens/anexos pelo ticket; suporte global tem autorização própria. |
-| `DeliveryQueue`, jobs, `MailQueue`, WhatsApp e `routes/commands.php` | Seleção global deliberada de trabalho; empresa selecionada antes do processamento. Conexões já liberadas antes de chamadas externas e espera do daemon, desde que fora de transação. |
+| `DeliveryQueue`, jobs, `MailQueue`, WhatsApp e `routes/commands.php` | Seleção global deliberada de trabalho; empresa selecionada antes do processamento. A conexão é reutilizada durante os envios e liberada no fim do lote do daemon, antes da espera. |
 | `database/`, `scripts/hostinger.php`, bootstrap, cache/sessão/fila Laravel | Instalação/migrations e infraestrutura usam o gerenciador Laravel; não criar conexões manuais adicionais. |
 
 A busca no código de aplicação não encontrou `mysqli`, instâncias manuais de PDO nem pools paralelos. Reutilização é feita pelo DatabaseManager, não por chamadas manuais de abrir/fechar a cada consulta. Testes existentes cobrem rollback comercial, idempotência, acesso cruzado, catálogo, portal e filas. Isso não substitui auditoria contínua de novas consultas.

@@ -10,7 +10,7 @@ class DatabaseCapacityCooldown
 {
     public function handle(Request $request, Closure $next)
     {
-        if (DatabaseCapacity::remaining() > 0 && ! $request->is('up')) {
+        if (! $request->is('up') && ! DatabaseCapacity::recoverIfAvailable()) {
             return DatabaseCapacity::response($request);
         }
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Database\AccountLimits;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -11,6 +12,13 @@ use Tests\TestCase;
 class DatabaseOperationsTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_account_limits_extract_only_numeric_quotas(): void
+    {
+        $limits = AccountLimits::parse([(object) ['Grants' => "GRANT USAGE ON *.* TO 'private-account'@'private-host' WITH MAX_CONNECTIONS_PER_HOUR 500 MAX_USER_CONNECTIONS 75"], (object) ['Grants' => 'GRANT SELECT ON private_schema.* TO private_account WITH MAX_QUERIES_PER_HOUR 0 MAX_UPDATES_PER_HOUR 1000']]);
+        $this->assertSame(['max_connections_per_hour' => 500, 'max_user_connections' => 75, 'max_queries_per_hour' => 0, 'max_updates_per_hour' => 1000], $limits);
+        $this->assertSame([], AccountLimits::parse(['GRANT ALL PRIVILEGES ON private_schema.* TO private_account']));
+    }
 
     public function test_capacity_indexes_can_be_reapplied_after_partial_deployment(): void
     {

@@ -117,7 +117,7 @@ class WhatsApp
 
                 return;
             }
-            DeliveryQueue::releaseConnection();
+            // The result update must reuse the connection opened for this batch.
             $result = $this->api($this->t->id(), $message->connection_id, '/messages', ['id' => (string) $message->id, 'phone' => $message->recipient, 'text' => $message->body]);
             $state = $result['status'] ?? 'unknown';
             $q->update(['status' => $state === 'sent' ? 'sent' : 'unknown', 'sent_at' => $state === 'sent' ? now() : null, 'error' => $state === 'sent' ? null : 'Envio sem confirmação. Confira no celular antes de reenviar.', 'updated_at' => now()]);

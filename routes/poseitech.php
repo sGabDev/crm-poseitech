@@ -167,3 +167,8 @@ Route::middleware(['auth', 'company'])->group(function () {
     Route::post('/settings', [SettingsController::class, 'save']);
     Route::post('/staff/{id?}', [SettingsController::class, 'staff'])->whereNumber('id');
 });
+
+// Legal information remains accessible without authentication or password changes.
+Route::get('/legal/{page}', function (string $page) {
+    return view('legal', ['page' => $page, 'public' => true]);
+})->whereIn('page', ['privacidade', 'termos', 'cookies', 'reembolso'])->withoutMiddleware([RequirePasswordChange::class]);

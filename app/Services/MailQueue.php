@@ -55,7 +55,7 @@ class MailQueue
                     $view['html'] = 'emails.receipt-custom';
                 }
             }
-            DeliveryQueue::releaseConnection();
+            // Reuse this execution's connection when recording the SMTP result.
             $mailer->send($view, $data, function ($m) use ($email, $smtp) {
                 $m->to($email->recipient)->from($smtp['from'], $smtp['from_name'] ?? '')->subject($email->subject);
             });

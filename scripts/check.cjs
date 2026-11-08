@@ -17,6 +17,11 @@ for (const dir of ['app', 'bootstrap', 'config', 'database/migrations', 'databas
 for (const file of fs.readdirSync('public/assets').filter(file=>file.endsWith('.js'))) run(process.execPath, ['--check', path.join('public/assets',file)]);
 console.log('Sintaxe PHP e JavaScript válida.');
 if (process.argv.includes('--test')) {
+  run(process.execPath, ['tests/frontend.cjs']);
+  run(process.execPath, ['tests/privacy.cjs']);
+  run(process.execPath, ['tests/ux.cjs']);
+  run(process.execPath, ['tests/support-chat.cjs']);
+  run(process.execPath, ['tests/payment-poll.cjs']);
   run(process.execPath, ['scripts/whatsapp-poll.test.cjs']);
   run(process.execPath, ['scripts/whatsapp-inbox.test.cjs']);
   run(process.execPath, ['scripts/whatsapp-format.test.cjs']);

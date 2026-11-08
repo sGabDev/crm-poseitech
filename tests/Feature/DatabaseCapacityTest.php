@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\DatabaseCapacity;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use PDOException;
@@ -11,6 +12,12 @@ use Tests\TestCase;
 
 class DatabaseCapacityTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        DB::partialMock();
+    }
+
     public function test_connection_saturation_uses_a_short_pause_without_extending_it(): void
     {
         @unlink(DatabaseCapacity::path());
@@ -56,6 +63,7 @@ class DatabaseCapacityTest extends TestCase
     protected function tearDown(): void
     {
         @unlink(DatabaseCapacity::path());
+        @unlink(DatabaseCapacity::probePath());
         parent::tearDown();
     }
 
@@ -67,7 +75,8 @@ class DatabaseCapacityTest extends TestCase
             $pdo->errorInfo = ['HY000', 1226, 'Provider account details'];
             throw new QueryException('mysql', 'select 1', [], $pdo);
         });
-        $this->get('/capacity-test')->assertStatus(503)->assertSee('Uma pausa para retomar.')->assertDontSee('Provider account details')->assertHeader('Retry-After', '300');
+        $this->get('/capacity-test')->assertStatus(503)->assertSee('Uma pausa para retomar.')->assertDontSee('Provider account details')->assertHeader('Retry-After', '30');
+        DB::shouldReceive('select')->once()->with('SELECT 1')->andThrow(new PDOException('private'));
         $executed = false;
         Route::get('/capacity-blocked', function () use (&$executed) {
             $executed = true;
@@ -76,5 +85,60 @@ class DatabaseCapacityTest extends TestCase
         });
         $this->getJson('/capacity-blocked')->assertStatus(503)->assertJsonPath('status', 'unavailable');
         $this->assertFalse($executed);
+    }
+
+    public function test_recovery_reopens_access_before_the_quota_pause_expires(): void
+    {
+        @unlink(DatabaseCapacity::probePath());
+        DatabaseCapacity::pause();
+        DB::shouldReceive('select')->once()->with('SELECT 1')->andReturn([(object) ['1' => 1]]);
+        Route::get('/capacity-recovered', fn () => 'available');
+        $this->get('/capacity-recovered')->assertOk()->assertSee('available');
+        $this->assertSame(0, DatabaseCapacity::remaining());
+    }
+
+    public function test_failed_probes_are_throttled_and_do_not_extend_the_pause(): void
+    {
+        @unlink(DatabaseCapacity::probePath());
+        DatabaseCapacity::pause();
+        $until = file_get_contents(DatabaseCapacity::path());
+        DB::shouldReceive('select')->once()->with('SELECT 1')->andThrow(new PDOException('private'));
+        $this->assertFalse(DatabaseCapacity::recoverIfAvailable());
+        $this->assertFalse(DatabaseCapacity::recoverIfAvailable());
+        $this->assertSame($until, file_get_contents(DatabaseCapacity::path()));
+    }
+
+    public function test_concurrent_recovery_probe_does_not_open_another_connection(): void
+    {
+        DatabaseCapacity::pause();
+        $handle = fopen(DatabaseCapacity::probePath(), 'c+');
+        flock($handle, LOCK_EX);
+        DB::shouldReceive('select')->never();
+        try {
+            $this->assertFalse(DatabaseCapacity::recoverIfAvailable());
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    public function test_repeated_quota_errors_do_not_extend_the_active_pause(): void
+    {
+        file_put_contents(DatabaseCapacity::path(), (string) (time() + 200));
+        $until = file_get_contents(DatabaseCapacity::path());
+        DatabaseCapacity::pause();
+        $this->assertSame($until, file_get_contents(DatabaseCapacity::path()));
+    }
+
+    public function test_probe_does_not_clear_a_newer_longer_pause(): void
+    {
+        @unlink(DatabaseCapacity::probePath());
+        DatabaseCapacity::pause();
+        DB::shouldReceive('select')->once()->with('SELECT 1')->andReturnUsing(function () {
+            file_put_contents(DatabaseCapacity::path(), (string) (time() + 600));
+
+            return [];
+        });
+        $this->assertFalse(DatabaseCapacity::recoverIfAvailable());
+        $this->assertGreaterThan(590, DatabaseCapacity::remaining());
     }
 }

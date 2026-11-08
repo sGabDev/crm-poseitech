@@ -28,7 +28,7 @@
 @if($a->status==='pending' && $a->type==='receivable' && $a->customer_id && ($company->mercadopago['enabled'] ?? false) && (($a->sale_id && $company->enabled('sales') && auth()->user()->allows('sales',true)) || auth()->user()->allows($a->origin==='credit' ? 'credit' : 'finance',true)))
 <form method="post" action="{{ url('/accounts/'.$a->id.'/mercadopago') }}">@csrf<button class="secondary">Link Mercado Pago</button></form>
 @endif</td>@endif</tr>@empty<tr>
-<td class="empty" colspan="6">Nenhuma conta encontrada.</td>
+<td class="empty" colspan="{{ ($readonly ?? false) ? 5 : 6 }}">Nenhuma conta encontrada.</td>
 </tr>@endforelse</tbody>
 </table>
 </div>

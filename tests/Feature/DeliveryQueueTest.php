@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Company;
 use App\Models\Plan;
+use App\Services\DatabaseCapacity;
 use App\Services\DeliveryQueue;
+use App\Services\MailQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Mailer;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +18,27 @@ class DeliveryQueueTest extends TestCase
     use RefreshDatabase;
 
     private Company $company;
+
+    public function test_database_saturation_in_delivery_keeps_the_short_pause(): void
+    {
+        @unlink(DatabaseCapacity::path());
+        $this->email($this->company->id);
+        $error = new \PDOException('private');
+        $error->errorInfo = ['HY000', 1040, 'private'];
+        $queue = \Mockery::mock(MailQueue::class);
+        $queue->shouldReceive('send')->once()->andThrow($error);
+        app()->instance(MailQueue::class, $queue);
+        try {
+            app(DeliveryQueue::class)->process('email');
+            $this->fail('Expected database saturation');
+        } catch (\PDOException $caught) {
+            $this->assertSame($error, $caught);
+            $this->assertGreaterThan(0, DatabaseCapacity::remaining());
+            $this->assertLessThanOrEqual(3, DatabaseCapacity::remaining());
+        } finally {
+            @unlink(DatabaseCapacity::path());
+        }
+    }
 
     protected function setUp(): void
     {

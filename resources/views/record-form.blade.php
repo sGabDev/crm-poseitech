@@ -10,9 +10,10 @@
 @foreach($spec['fields'] as $key=>$f)
 @php($value=old($key,isset($record->$key) ? ($f[1]==='money' ? number_format($record->$key/100,2,'.','') : $record->$key) : ($key==='due_day' ? 5 : ($f[1]==='money' || $f[1]==='number' ? 0 : ''))))
 <label class="{{ $f[1]==='textarea' ? 'full' : '' }}">{{ str_replace('R$',$company->currency,$f[0]) }}
-@if($key==='addons' && !old('addons') && $record) @php($value=collect(json_decode($record->addons ?? '[]',true))->map(fn($a)=>$a['name'].' | '.number_format($a['price']/100,2,'.',''))->implode(PHP_EOL)) @endif
+@if($key==='addons' && !session()->hasOldInput('addons') && $record) @php($value=collect(json_decode($record->addons ?? '[]',true))->map(fn($a)=>$a['name'].' | '.number_format($a['price']/100,2,'.',''))->implode(PHP_EOL)) @endif
 @if($f[1]==='textarea')<textarea name="{{ $key }}" rows="3">{{ $value }}</textarea>
 @elseif($f[1]==='checkbox')<span class="check">
+<input type="hidden" name="{{ $key }}" value="0">
 <input type="checkbox" name="{{ $key }}" value="1" @checked(old($key,$record->$key ?? ($key==='active')))>
 <span>Sim</span>
 </span>

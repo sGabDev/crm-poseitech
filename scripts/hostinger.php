@@ -55,7 +55,7 @@ if (! is_file($base.'/.env')) {
         exit(1);
     }
     $template = $base.'/deploy/hostinger.env.example';
-    $contents = is_file($template) ? file_get_contents($template) : "APP_NAME=\"PoseiTech CRM\"\nAPP_ENV=production\nAPP_KEY=\nAPP_DEBUG=false\nAPP_URL=https://seu-dominio.com\nAPP_LOCALE=pt_BR\nLOG_CHANNEL=daily\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=PREENCHA_BANCO\nDB_USERNAME=PREENCHA_USUARIO\nDB_PASSWORD=\"PREENCHA_SENHA\"\nSESSION_DRIVER=file\nSESSION_ENCRYPT=true\nSESSION_SECURE_COOKIE=true\nCACHE_STORE=file\nQUEUE_CONNECTION=database\nMAIL_MAILER=log\n";
+    $contents = is_file($template) ? file_get_contents($template) : "APP_NAME=\"PoseiTech CRM\"\nAPP_ENV=production\nAPP_KEY=\nAPP_DEBUG=false\nAPP_URL=https://seu-dominio.com\nAPP_LOCALE=pt_BR\nLOG_CHANNEL=daily\nDB_CONNECTION=mysql\nDB_HOST=localhost\nDB_PORT=3306\nDB_DATABASE=PREENCHA_BANCO\nDB_USERNAME=PREENCHA_USUARIO\nDB_PASSWORD=\"PREENCHA_SENHA\"\nSESSION_DRIVER=file\nSESSION_ENCRYPT=true\nSESSION_SECURE_COOKIE=true\nCACHE_STORE=file\nQUEUE_CONNECTION=database\nMAIL_MAILER=log\n";
     // Exclusive creation: never overwrite an existing environment, even concurrently.
     $file = @fopen($base.'/.env', 'x');
     if (! $file) {

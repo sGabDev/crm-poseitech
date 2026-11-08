@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
 class AuthController extends Controller
 {
@@ -36,6 +37,7 @@ class AuthController extends Controller
         if ($r->user()->must_change_password) {
             return redirect('/password/change');
         }
+
         return redirect()->intended($r->user()->role === 'super' ? '/admin' : '/dashboard');
     }
 
@@ -79,24 +81,41 @@ class AuthController extends Controller
 
     public function forgot(Request $r)
     {
-        $r->validate(['email' => 'required|email']);
-        Password::sendResetLink($r->only('email'));
+        $r->merge(['email' => Str::lower(trim((string) $r->input('email')))]);
+        $r->validate(['email' => 'required|string|email|max:180']);
+        try {
+            Password::sendResetLink($r->only('email') + ['active' => true]);
+        } catch (TransportExceptionInterface $error) {
+            // Never log the exception message: it may contain credentials or the reset URL.
+            logger()->warning('auth.password_reset_delivery_failed', ['exception_class' => get_class($error)]);
+            // Allow another attempt once the mail service is restored.
+            $user = User::where('email', $r->input('email'))->first();
+            if ($user) {
+                Password::deleteToken($user);
+            }
+        }
 
-        return back()->with('success', 'Se o e-mail estiver cadastrado, você receberá as instruções de recuperação.');
+        return redirect()->route('password.request')->withInput($r->only('email'))->with('success', 'Se o e-mail estiver cadastrado e a conta estiver ativa, você receberá as instruções de recuperação. Confira também o spam. Aguarde um minuto antes de solicitar novamente.');
     }
 
     public function reset(Request $r)
     {
-        $r->validate(['token' => 'required', 'email' => 'required|email', 'password' => ['required', 'confirmed', PasswordRule::min(10)->letters()->numbers()]]);
-        $status = Password::reset($r->only('email', 'password', 'password_confirmation', 'token'), function (User $user, string $password) {
-            $user->forceFill(['password' => Hash::make($password), 'must_change_password' => false, 'remember_token' => Str::random(60)])->save();
-            DB::table('sessions')->where('user_id', $user->id)->delete();
+        $r->merge(['email' => Str::lower(trim((string) $r->input('email')))]);
+        $r->validate(['token' => 'required|string|max:255', 'email' => 'required|string|email|max:180', 'password' => ['required', 'confirmed', PasswordRule::min(10)->letters()->numbers()]]);
+        $status = Password::reset($r->only('email', 'password', 'password_confirmation', 'token') + ['active' => true], function (User $user, string $password) {
+            DB::transaction(function () use ($user, $password) {
+                $user->forceFill(['password' => Hash::make($password), 'must_change_password' => false, 'remember_token' => Str::random(60)])->save();
+                DB::table('sessions')->where('user_id', $user->id)->delete();
+            });
             event(new PasswordReset($user));
         });
         if ($status !== Password::PASSWORD_RESET) {
             throw ValidationException::withMessages(['email' => 'Link inválido ou expirado. Solicite outro.']);
         }
 
-        return redirect('/login')->with('success', 'Senha atualizada.');
+        $r->session()->invalidate();
+        $r->session()->regenerateToken();
+
+        return redirect('/login')->with('success', 'Senha atualizada. Entre com sua nova senha. Por segurança, as sessões anteriores foram encerradas.');
     }
 }

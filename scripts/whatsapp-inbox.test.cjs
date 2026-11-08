@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const { webcrypto } = require('node:crypto');
 
-function harness({ failSend = false, outgoingStatus = null, live = false, manualUnread = false, incomingRead = false } = {}) {
+function harness({ failSend = false, outgoingStatus = null, live = false, manualUnread = false, incomingRead = false, stateFailure = null } = {}) {
   class Element {
     constructor(tag = 'div') { this.tagName = tag.toUpperCase(); this.children = []; this.dataset = {}; this.style = {}; this.hidden = false; this.value = ''; this.files = []; this.checked = false; this.scrollHeight = 500; this.scrollTop = 500; this.clientHeight = 300;
       const names = new Set(); this.classList = { add: name => names.add(name), remove: name => names.delete(name), contains: name => names.has(name), toggle: (name, value) => { if (value ?? !names.has(name)) names.add(name); else names.delete(name); } };
@@ -42,6 +42,7 @@ function harness({ failSend = false, outgoingStatus = null, live = false, manual
     setTimeout: (fn, delay) => { const id = ++sequence; timers.set(id, { fn, delay }); return id; }, clearTimeout: id => timers.delete(id),
     fetch: async (url, options) => {
       requests.push({ url, options });
+      if (url.endsWith('/state') && stateFailure) return { ok: false, status: stateFailure, headers: { get: () => '120' }, json: async () => ({ message: 'Indisponível' }) };
       if (url.endsWith('/watch')) return new Promise(resolve => { resolveWatch = cursor => resolve({ ok: true, json: async () => ({ cursor }) }); });
       if (url.endsWith('/send')) {
         sendAttempts++;
@@ -61,7 +62,7 @@ test('attendance renders untrusted names and messages as text and polls only whi
   assert.match(app.text(app.get('inbox-messages')), /<script>alert\(1\)<\/script>/);
   assert.match(app.text(app.get('inbox-conversations')), /<img src=x onerror=alert\(1\)>/);
   assert.equal(app.requests.length, 1);
-  assert.ok([...app.timers.values()].some(timer => timer.delay === 30000));
+  assert.ok([...app.timers.values()].some(timer => timer.delay === 60000));
   app.document.hidden = true; app.listeners.visibilitychange();
   assert.equal(app.timers.size, 0);
   app.document.hidden = false; app.listeners.visibilitychange(); await tick(); assert.equal(app.requests.length, 2);
@@ -115,4 +116,21 @@ test('a manually unread conversation is not automatically marked read during ref
   assert.equal(app.requests.filter(r => r.url.endsWith('/read')).length, 0);
   app.get('inbox-refresh').onclick(); await tick();
   assert.equal(app.requests.filter(r => r.url.endsWith('/read')).length, 0);
+});
+
+test('database cooldown pauses both state and live watch requests, including visibility changes', async () => {
+  const app = harness({ live: true, stateFailure: 503 }); await tick();
+  assert.equal(app.requests.length, 1);
+  assert.ok([...app.timers.values()].every(timer => timer.delay >= 119000));
+  app.listeners.visibilitychange(); await tick();
+  assert.equal(app.requests.length, 1);
+  app.listeners.pagehide();
+});
+
+test('an expired session stops automatic attendance requests', async () => {
+  const app = harness({ live: true, stateFailure: 419 }); await tick();
+  assert.equal(app.requests.length, 1);
+  assert.equal(app.timers.size, 0);
+  app.listeners.visibilitychange(); await tick();
+  assert.equal(app.requests.length, 1);
 });

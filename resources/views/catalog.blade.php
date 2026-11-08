@@ -58,4 +58,5 @@
     @include('components.catalog-history')
     @if($checkout)<a href="#catalog-cart" class="catalog-cart-bar"><span>Ver sacola</span><strong id="catalog-bar-total"></strong><span aria-hidden="true">→</span></a>@endif
 </div>
+@include('components.seller-identity')
 @endsection

@@ -3,12 +3,10 @@
 @section('content')
 <div class="page-heading">
 <div>
-<div class="eyebrow">SEU NEGÓCIO EM MOVIMENTO</div>
 <h1>Visão geral</h1>
-<p>Acompanhe os resultados e descubra o próximo passo.</p>
 </div>@if(auth()->user()->allows('sales',true))<a class="button" href="{{ url('/sales/new') }}">+ Nova venda</a>@endif</div>
 @include('components.period')
-<div class="actions" style="margin-bottom:18px"><span class="badge">Hoje: {{ \App\Services\Tenant::money($todayRevenue) }}</span><span class="badge">Mês atual: {{ \App\Services\Tenant::money($monthRevenue) }}</span></div>
+<div class="dashboard-summary"><span class="badge">Hoje: {{ \App\Services\Tenant::money($todayRevenue) }}</span><span class="badge">Mês atual: {{ \App\Services\Tenant::money($monthRevenue) }}</span></div>
 <div class="kpi-grid">
 <article class="kpi featured">
 <span>Faturamento no período</span>
@@ -18,12 +16,10 @@
 <article class="kpi">
 <span>Vendas realizadas</span>
 <strong>{{ $totals->count }}</strong>
-<small>Vendas concluídas no período</small>
 </article>
 <article class="kpi">
 <span>Ticket médio</span>
 <strong>{{ \App\Services\Tenant::money($ticket) }}</strong>
-<small>Valor médio por venda</small>
 </article>
 <article class="kpi">
 <span>Novos clientes</span>
@@ -56,8 +52,6 @@
 <section class="card">
 <div class="section-heading">
 <h2>Formas de pagamento</h2>
-<span class="dot">
-</span>
 </div>@forelse($methods as $method)<div class="metric-row">
 <span>{{ config('poseitech.payment_labels.'.$method->method) }}</span>
 <strong>{{ \App\Services\Tenant::money($method->total) }}</strong>
@@ -89,14 +83,12 @@
 <small>Saldo do caixa aberto</small>
 </article>
 </div>@endif
-<div class="opportunity-banner">
-<div>
-<span class="eyebrow">HORA DE AGIR</span>
-<h2>{{ $inactive ? $inactive.' clientes podem estar esperando seu contato.' : 'Transforme cada venda em um novo relacionamento.' }}</h2>
-<p>Encontre oportunidades a partir dos dados do seu negócio.</p>
+@if($inactive && $company->enabled('customers') && auth()->user()->allows('customers'))
+<div class="opportunity-banner dashboard-opportunity">
+<div><h2>{{ $inactive }} clientes sem comprar recentemente</h2></div>
+<a class="button secondary" href="{{ url('/opportunities') }}">Ver oportunidades</a>
 </div>
-<a class="button secondary" href="{{ url('/opportunities') }}">Ver oportunidades ↗</a>
-</div>
+@endif
 <div class="grid">
 <section class="card">
 <div class="section-heading">

@@ -3,9 +3,70 @@
 namespace App\Services;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DatabaseCapacity
 {
+    public static function probePath(): string
+    {
+        return self::path().'.probe';
+    }
+
+    // Allow one read-only recovery check per instance and interval. Never
+    // replay the request that failed: its write may already have committed.
+    public static function recoverIfAvailable(): bool
+    {
+        if (self::remaining() === 0) {
+            return true;
+        }
+        $handle = @fopen(self::probePath(), 'c+');
+        if ($handle === false) {
+            return false;
+        }
+        try {
+            if (! flock($handle, LOCK_EX | LOCK_NB)) {
+                return false;
+            }
+            if ((int) stream_get_contents($handle) > time()) {
+                return false;
+            }
+            $until = @file_get_contents(self::path());
+            rewind($handle);
+            ftruncate($handle, 0);
+            fwrite($handle, (string) (time() + max(1, (int) config('database_pool.recheck_seconds', 30))));
+            fflush($handle);
+            try {
+                DB::select('SELECT 1');
+            } catch (\Throwable) {
+                // Keep the original pause; repeated failures must not extend it.
+                return false;
+            }
+            $capacity = @fopen(self::path(), 'c+');
+            if ($capacity === false) {
+                return false;
+            }
+            try {
+                if (! flock($capacity, LOCK_EX)) {
+                    return false;
+                }
+                // Do not clear a newer, longer pause set while probing.
+                if (stream_get_contents($capacity) !== $until) {
+                    return false;
+                }
+                rewind($capacity);
+                ftruncate($capacity, 0);
+                fwrite($capacity, '0');
+                fflush($capacity);
+            } finally {
+                fclose($capacity);
+            }
+
+            return true;
+        } finally {
+            fclose($handle);
+        }
+    }
+
     public static function path(): string
     {
         return storage_path('framework/db-capacity-'.app()->environment().'.until');
@@ -40,7 +101,7 @@ class DatabaseCapacity
             if (flock($handle, LOCK_EX)) {
                 $until = (int) stream_get_contents($handle);
                 $target = time() + $seconds;
-                if ($until < $target && ($until <= time() || $quota)) {
+                if ($until <= time()) {
                     rewind($handle);
                     ftruncate($handle, 0);
                     fwrite($handle, (string) $target);
@@ -74,7 +135,7 @@ class DatabaseCapacity
 
     public static function response(Request $request)
     {
-        $seconds = max(1, self::remaining());
+        $seconds = max(1, min(self::remaining(), (int) config('database_pool.recheck_seconds', 30)));
         $response = $request->expectsJson()
             ? response()->json(['status' => 'unavailable', 'qr' => null, 'message' => 'O banco está temporariamente indisponível. As atualizações foram pausadas. Tente novamente mais tarde.', 'retry_after' => $seconds], 503)
             : response()->view('errors.database-capacity', [], 503);

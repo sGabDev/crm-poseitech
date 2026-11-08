@@ -52,6 +52,26 @@ class CommerceTest extends TestCase
         $this->product = $t->insert('products', ['name' => 'Produto A', 'price' => 10000, 'cost' => 4000, 'stock' => 10, 'active' => true]);
     }
 
+    public function test_product_form_preserves_cleared_addons_and_unchecked_status_after_validation(): void
+    {
+        app(Tenant::class)->update('products', $this->product, ['addons' => json_encode([['name' => 'Embalagem antiga', 'price' => 250]])]);
+        $response = $this->withSession(['_old_input' => ['addons' => '', 'active' => '0']])
+            ->get('/records/products/'.$this->product.'/edit')->assertOk();
+        $dom = new \DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$response->getContent());
+        $xpath = new \DOMXPath($dom);
+        $this->assertSame('', $xpath->query('//textarea[@name="addons"]')->item(0)->textContent);
+        $this->assertSame(0, $xpath->query('//input[@type="checkbox" and @name="active" and @checked]')->length);
+        $this->assertSame(1, $xpath->query('//input[@type="hidden" and @name="active" and @value="0"]')->length);
+    }
+
+    public function test_filtered_records_show_recovery_action_instead_of_first_registration_message(): void
+    {
+        $this->get('/records/products?q=sem-correspondencia')->assertOk()
+            ->assertSee('Nenhum cadastro encontrado')->assertSee('Limpar filtros')
+            ->assertDontSee('Seu primeiro cadastro começa aqui');
+    }
+
     private function sale(array $overrides = [], bool $openCash = true): array
     {
         if ($openCash && ! DB::table('cash_registers')->where('company_id', $this->company->id)->whereNull('closed_at')->exists()) {
@@ -775,6 +795,23 @@ class CommerceTest extends TestCase
         $this->postJson('/settings/mail', ['action' => 'process'])->assertOk()->assertJson(['processed' => true, 'status' => 'failed']);
         $this->postJson('/settings/mail', ['action' => 'process'])->assertOk()->assertJson(['processed' => false]);
         $this->assertDatabaseHas('email_logs', ['id' => $cancelled, 'status' => 'cancelled', 'attempts' => 0]);
+    }
+
+    public function test_manual_mail_processing_batches_only_the_current_company(): void
+    {
+        $this->company->update(['smtp' => ['host' => 'smtp.example.test', 'port' => 587, 'from' => 'loja@example.test']]);
+        $t = app(Tenant::class);
+        for ($i = 0; $i < 6; $i++) {
+            $t->insert('email_logs', ['recipient' => 'cliente@example.test', 'subject' => 'Pendente', 'body' => 'Mensagem']);
+        }
+        $other = Company::create(['plan_id' => $this->company->plan_id, 'name' => 'Outra', 'slug' => 'mail-batch-other', 'modules' => array_keys(config('poseitech.modules'))]);
+        $foreign = DB::table('email_logs')->insertGetId(['company_id' => $other->id, 'recipient' => 'outro@example.test', 'subject' => 'Privado', 'body' => 'Privado', 'created_at' => now(), 'updated_at' => now()]);
+        $mailer = \Mockery::mock(Mailer::class);
+        $mailer->shouldReceive('send')->times(6);
+        Mail::shouldReceive('build')->times(6)->andReturn($mailer);
+        $this->postJson('/settings/mail', ['action' => 'process'])->assertOk()->assertJson(['processed' => true, 'count' => 5, 'has_more' => true]);
+        $this->postJson('/settings/mail', ['action' => 'process'])->assertOk()->assertJson(['processed' => true, 'count' => 1, 'has_more' => false]);
+        $this->assertDatabaseHas('email_logs', ['id' => $foreign, 'status' => 'pending', 'attempts' => 0]);
     }
 
     public function test_deposit_pays_debt_keeps_excess_and_wallet_sale_does_not_double_cash_flow(): void

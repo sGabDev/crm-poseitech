@@ -5,6 +5,7 @@
 return [
     'cooldown' => (int) env('DB_CAPACITY_COOLDOWN_SECONDS', 300),
     'saturation_cooldown' => (int) env('DB_SATURATION_COOLDOWN_SECONDS', 3),
+    'recheck_seconds' => (int) env('DB_CAPACITY_RECHECK_SECONDS', 30),
     'slow_request_ms' => (int) env('DB_SLOW_REQUEST_MS', 1000),
     'size' => (int) env('DB_POOL_SIZE', 10),
     'clients' => (int) env('DB_POOL_CLIENTS', 32),
